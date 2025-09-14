@@ -1,0 +1,90 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local HRP = LocalPlayer.Character:WaitForChild("HumanoidRootPart")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+-- função de teleport
+local function tpTo(pos)
+    if HRP and HRP.Parent then
+        HRP.CFrame = CFrame.new(pos)
+    end
+end
+
+-- posições fixas
+local jobBoardPos = Vector3.new(-1090.03, 15.08, -940.92)
+local jobStep1   = Vector3.new(-387.47, 14.52, -1108.17)
+local jobStep2   = Vector3.new(-1099.53, 14.52, -1036.82)
+
+-- pegar job
+local function takeJob()
+    local prompt = workspace:FindFirstChild("Job Board")
+    if prompt and prompt:FindFirstChild("Hitbox") then
+        local interact = prompt.Hitbox:FindFirstChild("InteractPrompt")
+        if interact then
+            fireproximityprompt(interact)
+            task.wait(1.2)
+        end
+    end
+end
+
+-- cancelar job (corrigido pro mobile)
+local function cancelJob()
+    local jobFrame = LocalPlayer.PlayerGui:WaitForChild("Main"):WaitForChild("GlobalFrame"):WaitForChild("Job")
+    local cancelBtn = jobFrame:FindFirstChild("Cancel")
+
+    if cancelBtn and cancelBtn:IsA("TextButton") then
+        local absPos = cancelBtn.AbsolutePosition
+        local absSize = cancelBtn.AbsoluteSize
+
+        -- centraliza clique
+        local clickX = absPos.X + absSize.X/2
+        local clickY = absPos.Y + absSize.Y/2
+
+        -- aplica offset manual (empurra clique mais pra baixo)
+        clickY = clickY + 55 -- ajuste: aumenta se ainda clicar acima
+
+        VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, true, game, 1)
+        VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, false, game, 1)
+
+        warn("Missão cancelada com offset!")
+        task.wait(0.7)
+    else
+        warn("Botão de cancel não encontrado!")
+    end
+end
+
+-- checar se é Stocking Rampage
+local function isStockingRampage()
+    local jobGui = LocalPlayer.PlayerGui.Main.GlobalFrame.Job:FindFirstChild("Job")
+    if jobGui and jobGui:IsA("TextLabel") then
+        local text = jobGui.Text or ""
+        return text:lower():find("stocking rampage") ~= nil
+    end
+    return false
+end
+
+-- loop principal
+while task.wait(1) do
+    tpTo(jobBoardPos)
+    takeJob()
+
+    local jobGui = LocalPlayer.PlayerGui.Main.GlobalFrame.Job:FindFirstChild("Job")
+    local tries = 0
+    while jobGui and (jobGui.Text == "" or jobGui.Text == nil) and tries < 20 do
+        task.wait(0.5)
+        tries += 1
+    end
+
+    if isStockingRampage() then
+        warn("Pegou Stocking Rampage!")
+        tpTo(jobStep1)
+        task.wait(2)
+        tpTo(jobStep2)
+        task.wait(2)
+        tpTo(jobBoardPos)
+    else
+        warn("Missão errada, cancelando...")
+        cancelJob()
+    end
+end
+
