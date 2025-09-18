@@ -1,0 +1,144 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local HRP = LocalPlayer.Character:WaitForChild("HumanoidRootPart")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local UserInputService = game:GetService("UserInputService")
+
+local function tpTo(pos)
+    if HRP and HRP.Parent then
+        HRP.CFrame = CFrame.new(pos)
+    end
+end
+
+local jobBoardPos = Vector3.new(-1091.59, 15.08, -935.24)
+local jobStep1 = Vector3.new(-387.47, 14.52, -1108.17)
+local jobStep2 = Vector3.new(-1099.53, 14.52, -1036.82)
+
+local function takeJob()
+    local prompt = workspace:FindFirstChild("Job Board")
+    if prompt and prompt:FindFirstChild("Hitbox") then
+        local interact = prompt.Hitbox:FindFirstChild("InteractPrompt")
+        if interact then
+            fireproximityprompt(interact)
+            task.wait(1.2)
+        end
+    end
+end
+
+local function cancelJob()
+    local jobFrame = LocalPlayer.PlayerGui:WaitForChild("Main"):WaitForChild("GlobalFrame"):WaitForChild("Job")
+    local cancelBtn = jobFrame:FindFirstChild("Cancel")
+    if cancelBtn and cancelBtn:IsA("TextButton") then
+        local absPos, absSize = cancelBtn.AbsolutePosition, cancelBtn.AbsoluteSize
+        local clickX = absPos.X + absSize.X/2
+        local clickY = absPos.Y + absSize.Y/2 + 55
+        VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, true, game, 1)
+        VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, false, game, 1)
+        task.wait(0.7)
+    end
+end
+
+local function getJobName()
+    local jobGui = LocalPlayer.PlayerGui.Main.GlobalFrame.Job:FindFirstChild("Job")
+    if jobGui and jobGui:IsA("TextLabel") then
+        return (jobGui.Text or ""):lower()
+    end
+    return ""
+end
+
+local function doStockingRampage()
+    tpTo(jobStep1)
+    task.wait(2)
+    tpTo(jobStep2)
+    task.wait(2)
+    tpTo(jobBoardPos)
+end
+
+local function doMissingCat()
+    local catModel = workspace:FindFirstChild("Maxwellhajsjehsusj") and workspace.Maxwellhajsjehsusj:FindFirstChild("CatModel")
+    if catModel then
+        tpTo(catModel.Position + Vector3.new(0, 3, 0))
+        task.wait(1)
+        local catPrompt = catModel:FindFirstChild("CatPrompt")
+        if catPrompt then fireproximityprompt(catPrompt) end
+    end
+    task.wait(2)
+    tpTo(jobBoardPos)
+end
+
+task.spawn(function()
+    while task.wait(1) do
+        tpTo(jobBoardPos)
+        takeJob()
+        local jobGui = LocalPlayer.PlayerGui.Main.GlobalFrame.Job:FindFirstChild("Job")
+        local tries = 0
+        while jobGui and (jobGui.Text == "" or jobGui.Text == nil) and tries < 20 do
+            task.wait(0.5)
+            tries += 1
+        end
+        local jobName = getJobName()
+        if jobName:find("stocking rampage") then
+            doStockingRampage()
+        elseif jobName:find("missing cat") then
+            doMissingCat()
+        else
+            cancelJob()
+        end
+    end
+end)
+
+local gui = Instance.new("ScreenGui", game.CoreGui)
+gui.ResetOnSpawn = false
+
+local button = Instance.new("ImageButton")
+button.Size = UDim2.new(0, 48, 0, 48)
+button.Position = UDim2.new(1, -200, 1, -60)
+button.AnchorPoint = Vector2.new(0, 0)
+button.BackgroundTransparency = 0.2
+button.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+button.Image = "rbxassetid://91045108512308"
+button.ImageColor3 = Color3.fromRGB(255, 255, 255)
+button.BorderSizePixel = 2
+button.BorderColor3 = Color3.fromRGB(0, 255, 0)
+button.ZIndex = 1000
+button.Parent = gui
+
+local textLabel = Instance.new("TextLabel")
+textLabel.Size = UDim2.new(0, 150, 0, 48)
+textLabel.Position = UDim2.new(0, 55, 0, 0)
+textLabel.BackgroundTransparency = 1
+textLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+textLabel.Font = Enum.Font.SourceSansBold
+textLabel.TextSize = 20
+textLabel.TextXAlignment = Enum.TextXAlignment.Left
+textLabel.Text = "MitHub Farm"
+textLabel.ZIndex = 1000
+textLabel.Parent = button
+
+local dragging, dragInput, dragStart, startPos = false
+
+button.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = button.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+button.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        button.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
