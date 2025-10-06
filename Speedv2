@@ -1,0 +1,143 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+---------------------------------------------------
+--// CONFIG
+---------------------------------------------------
+local WALK_SPEED = 21 -- velocidade customizada
+local looping = false
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local originalSpeed = Humanoid.WalkSpeed
+
+---------------------------------------------------
+--// GUI MitHub Speed
+---------------------------------------------------
+local gui = Instance.new("ScreenGui", game.CoreGui)
+gui.ResetOnSpawn = false
+
+local button = Instance.new("ImageButton")
+button.Size = UDim2.new(0, 62, 0, 62)
+button.Position = UDim2.new(1, -200, 1, -60)
+button.AnchorPoint = Vector2.new(0, 0)
+button.BackgroundTransparency = 0.2
+button.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+button.Image = "rbxassetid://91045108512308"
+button.ImageColor3 = Color3.fromRGB(255, 255, 255)
+button.BorderSizePixel = 2
+button.BorderColor3 = Color3.fromRGB(0, 255, 0)
+button.ZIndex = 1000
+button.Parent = gui
+
+local textLabel = Instance.new("TextLabel")
+textLabel.Size = UDim2.new(0, 180, 0, 48)
+textLabel.Position = UDim2.new(0, 65, 0, 7)
+textLabel.BackgroundTransparency = 1
+textLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+textLabel.Font = Enum.Font.SourceSansBold
+textLabel.TextSize = 20
+textLabel.TextXAlignment = Enum.TextXAlignment.Left
+textLabel.Text = "MitHub Speed: OFF"
+textLabel.ZIndex = 1000
+textLabel.Parent = button
+
+---------------------------------------------------
+--// SISTEMA DE ARRASTAR
+---------------------------------------------------
+local dragging, dragInput, dragStart, startPos = false
+button.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = button.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+button.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		dragInput = input
+	end
+end)
+UserInputService.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		local delta = input.Position - dragStart
+		button.Position = UDim2.new(
+			startPos.X.Scale,
+			startPos.X.Offset + delta.X,
+			startPos.Y.Scale,
+			startPos.Y.Offset + delta.Y
+		)
+	end
+end)
+
+---------------------------------------------------
+--// FUNÇÃO DE LOOP DE VELOCIDADE
+---------------------------------------------------
+local speedConnection
+
+local function applySpeed()
+	if Humanoid and Humanoid.Parent then
+		Humanoid.WalkSpeed = WALK_SPEED
+	end
+end
+
+local function startLoopWalkSpeed()
+	if speedConnection then speedConnection:Disconnect() end
+	speedConnection = RunService.Heartbeat:Connect(function()
+		if looping and Humanoid and Humanoid.Parent then
+			Humanoid.WalkSpeed = WALK_SPEED
+		end
+	end)
+
+	-- também detecta se o jogo tentar mudar o WalkSpeed
+	Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+		if looping and Humanoid.WalkSpeed ~= WALK_SPEED then
+			Humanoid.WalkSpeed = WALK_SPEED
+		end
+	end)
+end
+
+---------------------------------------------------
+--// BOTÃO: ATIVAR / DESATIVAR
+---------------------------------------------------
+button.MouseButton1Click:Connect(function()
+	looping = not looping
+
+	if looping then
+		originalSpeed = Humanoid.WalkSpeed
+		textLabel.Text = "MitHub Speed: ON"
+		textLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+		startLoopWalkSpeed()
+		warn("✅ Loop de WalkSpeed ativado:", WALK_SPEED)
+	else
+		if speedConnection then speedConnection:Disconnect() end
+		if Humanoid and Humanoid.Parent then
+			Humanoid.WalkSpeed = originalSpeed
+		end
+		textLabel.Text = "MitHub Speed: OFF"
+		textLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+		warn("⛔ Loop de WalkSpeed desativado:", originalSpeed)
+	end
+end)
+
+---------------------------------------------------
+--// REAPLICAR AO RESSUSCITAR
+---------------------------------------------------
+LocalPlayer.CharacterAdded:Connect(function(char)
+	Character = char
+	Humanoid = char:WaitForChild("Humanoid")
+	originalSpeed = Humanoid.WalkSpeed
+
+	if looping then
+		task.wait(0.5)
+		startLoopWalkSpeed()
+		Humanoid.WalkSpeed = WALK_SPEED
+		warn("🔁 Novo personagem detectado, reaplicando velocidade:", WALK_SPEED)
+	end
+end)
