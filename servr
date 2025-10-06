@@ -1,0 +1,132 @@
+-- Generic Server Finder (San Mateo) + debug e fallback
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- precisa de syn.request / http_request
+local request = syn and syn.request or http_request or request
+if not request then
+    warn("[ServerFinder] Seu exploit não tem syn.request/http_request. Habilite HTTP.")
+    return
+end
+
+local PLACE_ID = game.PlaceId
+local CURRENT_JOB = game.JobId
+local REGION_MATCH = "San Mateo"  -- mude aqui: "US West", "San Mateo", etc.
+local MAX_PAGES = 10              -- segurança pra não paginar infinito
+local TRY_FALLBACK_ANY = true     -- se não achar região, tenta entrar em qualquer outro server
+
+local function GetServers(cursor)
+    local url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100"):format(PLACE_ID)
+    if cursor then
+        url = url .. "&cursor=" .. HttpService:UrlEncode(cursor)
+    end
+    local res = request({ Url = url, Method = "GET" })
+    if not res or res.StatusCode ~= 200 or not res.Body then return nil end
+    local ok, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
+    return ok and data or nil
+end
+
+local function find_region_key(sample)
+    if type(sample) ~= "table" then return nil end
+    for k,_ in pairs(sample) do
+        local lk = tostring(k):lower()
+        if lk == "region" or lk == "location" or lk == "datacenter" or lk == "dc" then
+            return k
+        end
+    end
+    return nil
+end
+
+local function find_ping_key(sample)
+    if type(sample) ~= "table" then return nil end
+    for k,v in pairs(sample) do
+        local lk = tostring(k):lower()
+        if lk:find("ping") and type(v) == "number" then
+            return k
+        end
+    end
+    return nil
+end
+
+local function FindTargetServer()
+    local cursor, pages = nil, 0
+    local regionKey, pingKey = nil, nil
+    local fallbackAnyId = nil
+    local bestPingId, bestPing = nil, math.huge
+
+    while pages < MAX_PAGES do
+        pages += 1
+        local payload = GetServers(cursor)
+        if not payload or not payload.data then break end
+
+        if #payload.data > 0 and (not regionKey or not pingKey) then
+            local sample = payload.data[1]
+            regionKey = regionKey or find_region_key(sample)
+            pingKey = pingKey or find_ping_key(sample)
+            -- Debug: mostra os campos disponíveis uma única vez
+            local keys = {}
+            for k,_ in pairs(sample) do table.insert(keys, tostring(k)) end
+            print("[ServerFinder] Campos no objeto do servidor:", table.concat(keys, ", "))
+            if regionKey then
+                print("[ServerFinder] Usando campo de região:", regionKey)
+            else
+                print("[ServerFinder] Nenhum campo de região encontrado nesta API.")
+            end
+            if pingKey then
+                print("[ServerFinder] Campo de ping detectado:", pingKey)
+            end
+        end
+
+        for _, srv in ipairs(payload.data) do
+            local id = srv.id
+            local playing, maxPlayers = tonumber(srv.playing or 0), tonumber(srv.maxPlayers or 0)
+
+            if id and id ~= CURRENT_JOB and (maxPlayers == 0 or playing < maxPlayers) then
+                -- alvo por região
+                if regionKey then
+                    local rv = tostring(srv[regionKey] or "")
+                    if rv:lower():find(REGION_MATCH:lower(), 1, true) then
+                        return id
+                    end
+                end
+                -- prepara fallback por ping
+                if pingKey and type(srv[pingKey]) == "number" and srv[pingKey] < bestPing then
+                    bestPing = srv[pingKey]
+                    bestPingId = id
+                end
+                -- fallback qualquer
+                if not fallbackAnyId then
+                    fallbackAnyId = id
+                end
+            end
+        end
+
+        if not payload.nextPageCursor then break end
+        cursor = payload.nextPageCursor
+    end
+
+    -- Ordem de fallback: melhor ping -> qualquer
+    if not regionKey then
+        if bestPingId then return bestPingId end
+        if TRY_FALLBACK_ANY then return fallbackAnyId end
+    end
+    return nil
+end
+
+local function TeleportTo(serverId)
+    if not serverId then
+        warn("[ServerFinder] Não achei servidor que combine com a região (ou não há campo de região na API).")
+        return
+    end
+    print("[ServerFinder] Teleportando para:", serverId)
+    local ok, err = pcall(function()
+        TeleportService:TeleportToPlaceInstance(PLACE_ID, serverId, Players.LocalPlayer)
+    end)
+    if not ok then
+        warn("[ServerFinder] Falha ao teleportar:", err)
+    end
+end
+
+TeleportTo(FindTargetServer())
