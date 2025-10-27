@@ -1,0 +1,101 @@
+assert(Drawing, "missing dependency: 'Drawing'");
+
+local BOX_COLOR = Color3.new(1,0,0);
+local BOX_OUTLINE_COLOR = Color3.new(0, 0, 0);
+local NAME_COLOR = Color3.new(1,1,1);
+local DISTANCE_COLOR = Color3.new(1,1,1);
+
+local players = game:GetService("Players");
+local workspace = game:GetService("Workspace");
+local runService = game:GetService("RunService");
+
+local cache = {};
+local camera = workspace.CurrentCamera;
+local getCFrame = workspace.GetModelCFrame;
+local wtvp = camera.WorldToViewportPoint;
+local localPlayer = players.LocalPlayer;
+
+local function createEsp(player)
+    local esp = {};
+    
+    esp.boxOutline = Drawing.new("Square");
+    esp.boxOutline.Color = BOX_OUTLINE_COLOR;
+    esp.boxOutline.Thickness = 3;
+    esp.boxOutline.Filled = false;
+
+    esp.box = Drawing.new("Square");
+    esp.box.Color = BOX_COLOR;
+    esp.box.Thickness = 1;
+    esp.box.Filled = false;
+
+    esp.name = Drawing.new("Text");
+    esp.name.Color = NAME_COLOR;
+    esp.name.Font = 2;
+    esp.name.Outline = true;
+    esp.name.Center = true;
+    esp.name.Size = 16;
+
+    esp.distance = Drawing.new("Text");
+    esp.distance.Color = DISTANCE_COLOR;
+    esp.distance.Font = 2;
+    esp.distance.Outline = true;
+    esp.distance.Center = true;
+    esp.distance.Size = 15;
+
+    cache[player] = esp;
+end
+
+local function removeEsp(player)
+    for _, drawing in next, cache[player] do
+        drawing:Remove();
+    end
+    cache[player] = nil;
+end
+
+local function updateEsp()
+    for player, esp in pairs(cache) do
+        local character = player and player.Character;
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid");
+        if character and humanoid and (not player.Team or player.Team ~= localPlayer.Team) then
+            local cframe = getCFrame(character);
+            local position, visible = wtvp(camera, cframe.Position);
+
+            esp.box.Visible = visible;
+            esp.boxOutline.Visible = visible;
+            esp.name.Visible = visible;
+            esp.distance.Visible = visible;
+
+            if visible then
+                local scaleFactor = 1 / (position.Z * math.tan(math.rad(camera.FieldOfView * 0.5)) * 2) * 100;
+                local width, height = math.floor(30 * scaleFactor), math.floor(42 * scaleFactor);
+                local x, y = math.floor(position.X), math.floor(position.Y);
+
+                esp.box.Size = Vector2.new(width, height);
+                esp.box.Position = Vector2.new(math.floor(x - width * 0.3), math.floor(y - height * 0.3));
+
+                esp.boxOutline.Size = esp.box.Size;
+                esp.boxOutline.Position = esp.box.Position;
+
+                local health = math.floor(humanoid.Health);
+                esp.name.Text = string.format("%s [HP: %d]", player.Name, health);
+                esp.name.Position = Vector2.new(x, math.floor(y - height * 0.5 - esp.name.TextBounds.Y - 2));
+
+                esp.distance.Text = math.floor(position.Z) .. " studs";
+                esp.distance.Position = Vector2.new(x, math.floor(y + height * 0.5 + 2));
+            end
+        else
+            esp.box.Visible = false;
+            esp.boxOutline.Visible = false;
+            esp.name.Visible = false;
+            esp.distance.Visible = false;
+        end
+    end
+end
+
+players.PlayerAdded:Connect(createEsp);
+players.PlayerRemoving:Connect(removeEsp);
+runService.RenderStepped:Connect(updateEsp);
+
+for _, player in ipairs(players:GetPlayers()) do
+    if player ~= localPlayer then createEsp(player); end
+end
