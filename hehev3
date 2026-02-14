@@ -18,14 +18,14 @@ local bullet; -- Referência ao módulo
 -- // Configuração
 local silentAim = {
 	Enabled = true,
-	WallCheck = true,
+	WallCheck = false,
 	HitPart = "Head",
 	Prediction = true,
 	Fov = {
 		Visible = true,
 		Radius = 150
 	},
-    IgnoreFriends = { "mielsfangirl" } -- lista de amigos a ignorar
+    IgnoreFriends = { "kakagpla" } -- lista de amigos a ignorar
 };
 
 -- // Desenhos
