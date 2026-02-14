@@ -23,7 +23,7 @@ local silentAim = {
 	Prediction = true,
 	Fov = {
 		Visible = true,
-		Radius = 450
+		Radius = 150
 	},
     IgnoreFriends = { "kakagpla" } -- lista de amigos a ignorar
 };
@@ -277,4 +277,20 @@ runService.RenderStepped:Connect(function()
         Tracer.Visible = false;
         TextInfo.Visible = false;
     end
+end)
+
+-- // Persistência
+if setupDependencies() then
+    if not hookfunction then 
+        return players.LocalPlayer:Kick("Executor Dosen't Have hookfunction.");
+    end;
+    setupHook();
+    print("Silent Aim ativado com sucesso. Persistência de hook garantida.");
+else
+    return players.LocalPlayer:Kick("Could't initialize dependencies. Script stopped.");
+end
+
+players.LocalPlayer.CharacterAdded:Connect(function()
+    setupDependencies();
+    print("Silent Aim: Player reapareceu. Variáveis atualizadas.");
 end)
