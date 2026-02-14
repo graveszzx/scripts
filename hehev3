@@ -23,7 +23,7 @@ local silentAim = {
 	Prediction = true,
 	Fov = {
 		Visible = true,
-		Radius = 150
+		Radius = 350
 	},
     IgnoreFriends = { "kakagpla" } -- lista de amigos a ignorar
 };
