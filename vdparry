@@ -1,0 +1,90 @@
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Teams = game:GetService("Teams")
+
+local LocalPlayer = Players.LocalPlayer
+local ParryRemote = RS.Remotes.Items:FindFirstChild("Parrying Dagger").parry
+
+local MAX_DISTANCE = 12
+local PARRY_COOLDOWN = 30
+
+local canParry = true
+
+local ParryAnimation = Instance.new("Animation")
+ParryAnimation.AnimationId = "rbxassetid://127096285501517"
+
+local ATTACK_ANIMS = {
+	["rbxassetid://113255068724446"] = true,
+	["rbxassetid://74968262036854"] = true,
+	["rbxassetid://110355011987939"] = true,
+	["rbxassetid://139369275981139"] = true,
+	["rbxassetid://132817836308238"] = true,
+	["rbxassetid://129784271201071"] = true,
+	["rbxassetid://133963973694098"] = true,
+	["rbxassetid://117042998468241"] = true
+}
+
+local function startCooldown()
+	task.delay(PARRY_COOLDOWN, function()
+		canParry = true
+	end)
+end
+
+local function playParryAnimation()
+	local char = LocalPlayer.Character
+	if not char then return end
+	
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+
+	local track = hum:LoadAnimation(ParryAnimation)
+	track:Play()
+end
+
+local function tryParry(enemyChar)
+	if not canParry then return end
+
+	local myChar = LocalPlayer.Character
+	if not myChar then return end
+
+	local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+	local enemyRoot = enemyChar:FindFirstChild("HumanoidRootPart")
+	if not myRoot or not enemyRoot then return end
+
+	local distance = (enemyRoot.Position - myRoot.Position).Magnitude
+	if distance > MAX_DISTANCE then return end
+
+	canParry = false
+	ParryRemote:FireServer()
+	playParryAnimation()
+	startCooldown()
+end
+
+-- fmit
+local function getKiller()
+	for _, p in pairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Team == Teams:FindFirstChild("Killer") then
+			return p
+		end
+	end
+	return nil
+end
+
+RunService.Heartbeat:Connect(function()
+	if not canParry then return end
+
+	local killer = getKiller()
+	if not killer then return end
+	if not killer.Character then return end
+
+	local hum = killer.Character:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+
+	for _, track in pairs(hum:GetPlayingAnimationTracks()) do
+		if track.Animation and ATTACK_ANIMS[track.Animation.AnimationId] then
+			tryParry(killer.Character)
+			return
+		end
+	end
+end)
