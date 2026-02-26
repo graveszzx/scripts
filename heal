@@ -3,9 +3,20 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Evita duplicar GUI
+if PlayerGui:FindFirstChild("HealGui") then
+	PlayerGui.HealGui:Destroy()
+end
+
 local HealRemote = ReplicatedStorage:WaitForChild("Remotes")
 	:WaitForChild("Healing")
 	:WaitForChild("HealEvent")
+
+-- =========================
+-- BLOQUEAR ANIMAÇÕES
+-- =========================
 
 local BlockedAnimations = {
 	["110392490296814"] = true,
@@ -32,60 +43,26 @@ end
 
 LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
 
+-- =========================
+-- GUI
+-- =========================
+
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "HealGui"
 ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.Parent = PlayerGui
 
+-- BOTÃO DE ABRIR
 local OpenButton = Instance.new("TextButton")
 OpenButton.Size = UDim2.new(0, 120, 0, 40)
 OpenButton.Position = UDim2.new(0, 20, 0, 20)
-OpenButton.Text = "heal"
+OpenButton.Text = "Abrir Heal"
 OpenButton.BackgroundColor3 = Color3.fromRGB(40,40,40)
 OpenButton.TextColor3 = Color3.new(1,1,1)
 OpenButton.Parent = ScreenGui
 
-local dragging = false
-local dragInput
-local dragStart
-local startPos
-
-local function update(input)
-	local delta = input.Position - dragStart
-	OpenButton.Position = UDim2.new(
-		startPos.X.Scale,
-		startPos.X.Offset + delta.X,
-		startPos.Y.Scale,
-		startPos.Y.Offset + delta.Y
-	)
-end
-
-OpenButton.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		dragging = true
-		dragStart = input.Position
-		startPos = OpenButton.Position
-
-		input.Changed:Connect(function()
-			if input.UserInputState == Enum.UserInputState.End then
-				dragging = false
-			end
-		end)
-	end
-end)
-
-OpenButton.InputChanged:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseMovement then
-		dragInput = input
-	end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-	if input == dragInput and dragging then
-		update(input)
-	end
-end)
-
+-- FRAME PRINCIPAL
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(0, 250, 0, 300)
 MainFrame.Position = UDim2.new(0.5, -125, 0.5, -150)
@@ -93,6 +70,7 @@ MainFrame.BackgroundColor3 = Color3.fromRGB(30,30,30)
 MainFrame.Visible = false
 MainFrame.Parent = ScreenGui
 
+-- SCROLL
 local Scroll = Instance.new("ScrollingFrame")
 Scroll.Size = UDim2.new(1, 0, 1, 0)
 Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -108,9 +86,72 @@ Layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 	Scroll.CanvasSize = UDim2.new(0, 0, 0, Layout.AbsoluteContentSize.Y + 10)
 end)
 
+-- =========================
+-- DRAG SYSTEM (PC + MOBILE)
+-- =========================
+
+local function MakeDraggable(frame)
+
+	local dragging = false
+	local dragInput
+	local dragStart
+	local startPos
+
+	local function update(input)
+		local delta = input.Position - dragStart
+		frame.Position = UDim2.new(
+			startPos.X.Scale,
+			startPos.X.Offset + delta.X,
+			startPos.Y.Scale,
+			startPos.Y.Offset + delta.Y
+		)
+	end
+
+	frame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch then
+
+			dragging = true
+			dragStart = input.Position
+			startPos = frame.Position
+
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+
+	frame.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement
+		or input.UserInputType == Enum.UserInputType.Touch then
+			dragInput = input
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if input == dragInput and dragging then
+			update(input)
+		end
+	end)
+end
+
+-- Aplicar drag no botão e no frame
+MakeDraggable(OpenButton)
+MakeDraggable(MainFrame)
+
+-- =========================
+-- ABRIR / FECHAR
+-- =========================
+
 OpenButton.MouseButton1Click:Connect(function()
 	MainFrame.Visible = not MainFrame.Visible
 end)
+
+-- =========================
+-- LISTA DE PLAYERS
+-- =========================
 
 local function CreatePlayerButton(player)
 	if player == LocalPlayer then return end
