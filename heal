@@ -1,0 +1,147 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local HealRemote = ReplicatedStorage:WaitForChild("Remotes")
+	:WaitForChild("Healing")
+	:WaitForChild("HealEvent")
+
+local BlockedAnimations = {
+	["110392490296814"] = true,
+	["95836365038528"] = true
+}
+
+local function OnCharacterAdded(character)
+	local Humanoid = character:WaitForChild("Humanoid")
+
+	Humanoid.AnimationPlayed:Connect(function(track)
+		local anim = track.Animation
+		if anim and anim.AnimationId then
+			local id = string.match(anim.AnimationId, "%d+")
+			if BlockedAnimations[id] then
+				track:Stop()
+			end
+		end
+	end)
+end
+
+if LocalPlayer.Character then
+	OnCharacterAdded(LocalPlayer.Character)
+end
+
+LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "HealGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local OpenButton = Instance.new("TextButton")
+OpenButton.Size = UDim2.new(0, 120, 0, 40)
+OpenButton.Position = UDim2.new(0, 20, 0, 20)
+OpenButton.Text = "heal"
+OpenButton.BackgroundColor3 = Color3.fromRGB(40,40,40)
+OpenButton.TextColor3 = Color3.new(1,1,1)
+OpenButton.Parent = ScreenGui
+
+local dragging = false
+local dragInput
+local dragStart
+local startPos
+
+local function update(input)
+	local delta = input.Position - dragStart
+	OpenButton.Position = UDim2.new(
+		startPos.X.Scale,
+		startPos.X.Offset + delta.X,
+		startPos.Y.Scale,
+		startPos.Y.Offset + delta.Y
+	)
+end
+
+OpenButton.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+		dragStart = input.Position
+		startPos = OpenButton.Position
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+OpenButton.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement then
+		dragInput = input
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		update(input)
+	end
+end)
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 250, 0, 300)
+MainFrame.Position = UDim2.new(0.5, -125, 0.5, -150)
+MainFrame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+MainFrame.Visible = false
+MainFrame.Parent = ScreenGui
+
+local Scroll = Instance.new("ScrollingFrame")
+Scroll.Size = UDim2.new(1, 0, 1, 0)
+Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+Scroll.ScrollBarThickness = 6
+Scroll.BackgroundTransparency = 1
+Scroll.Parent = MainFrame
+
+local Layout = Instance.new("UIListLayout")
+Layout.Padding = UDim.new(0, 5)
+Layout.Parent = Scroll
+
+Layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	Scroll.CanvasSize = UDim2.new(0, 0, 0, Layout.AbsoluteContentSize.Y + 10)
+end)
+
+OpenButton.MouseButton1Click:Connect(function()
+	MainFrame.Visible = not MainFrame.Visible
+end)
+
+local function CreatePlayerButton(player)
+	if player == LocalPlayer then return end
+
+	local Button = Instance.new("TextButton")
+	Button.Size = UDim2.new(1, -10, 0, 35)
+	Button.Text = player.Name
+	Button.BackgroundColor3 = Color3.fromRGB(50,50,50)
+	Button.TextColor3 = Color3.new(1,1,1)
+	Button.Parent = Scroll
+
+	Button.MouseButton1Click:Connect(function()
+		if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+			HealRemote:FireServer(player.Character.HumanoidRootPart, true)
+		end
+	end)
+end
+
+local function RefreshList()
+	for _, child in pairs(Scroll:GetChildren()) do
+		if child:IsA("TextButton") then
+			child:Destroy()
+		end
+	end
+
+	for _, player in pairs(Players:GetPlayers()) do
+		CreatePlayerButton(player)
+	end
+end
+
+Players.PlayerAdded:Connect(RefreshList)
+Players.PlayerRemoving:Connect(RefreshList)
+
+RefreshList()
