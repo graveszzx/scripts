@@ -6,7 +6,7 @@ local Teams = game:GetService("Teams")
 local LocalPlayer = Players.LocalPlayer
 local ParryRemote = RS.Remotes.Items:FindFirstChild("Parrying Dagger").parry
 
-local MAX_DISTANCE = 12
+local MAX_DISTANCE = 11
 local PARRY_COOLDOWN = 30
 
 local canParry = true
