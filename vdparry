@@ -22,7 +22,9 @@ local ATTACK_ANIMS = {
 	["rbxassetid://132817836308238"] = true,
 	["rbxassetid://129784271201071"] = true,
 	["rbxassetid://133963973694098"] = true,
-	["rbxassetid://117042998468241"] = true
+	["rbxassetid://117042998468241"] = true,
+	["rbxassetid://105374834496520"] = true,
+	["rbxassetid://111920872708571"] = true
 }
 
 local function startCooldown()
@@ -61,7 +63,6 @@ local function tryParry(enemyChar)
 	startCooldown()
 end
 
--- fmit
 local function getKiller()
 	for _, p in pairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer and p.Team == Teams:FindFirstChild("Killer") then
