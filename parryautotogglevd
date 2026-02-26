@@ -32,7 +32,7 @@ button.Size = UDim2.new(0, 60, 0, 62)
 button.Position = UDim2.new(1, -200, 1, -220)
 button.BackgroundTransparency = 0.2
 button.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-button.Image = "rbxassetid://91045108512308"
+button.Image = "rbxassetid://123067897710095"
 button.ImageColor3 = Color3.fromRGB(255, 255, 255)
 button.BorderSizePixel = 2
 button.BorderColor3 = Color3.fromRGB(0, 255, 0)
@@ -150,10 +150,10 @@ end)
 local function toggle()
 	enabled = not enabled
 	if enabled then
-		textLabel.Text = "MitHub AutoParry: ON"
+		textLabel.Text = "Parry on"
 		textLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
 	else
-		textLabel.Text = "MitHub AutoParry: OFF"
+		textLabel.Text = "Parry off"
 		textLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
 	end
 end
