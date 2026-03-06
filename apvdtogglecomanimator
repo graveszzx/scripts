@@ -9,6 +9,7 @@ local ParryRemote = RS.Remotes.Items:FindFirstChild("Parrying Dagger").parry
 
 local MAX_DISTANCE = 14
 local PARRY_COOLDOWN = 30
+local ANIM_DETECT_WINDOW = 0.15 -- só parry se a animação tiver < 0.15s rodando
 
 local canParry = true
 local enabled = false
@@ -17,6 +18,9 @@ local killerAnimator
 local killerChar
 local killerPlayer
 local killerConnection
+
+-- debounce por track pra não chamar tryParry várias vezes na mesma animação
+local firedTracks = {}
 
 local ParryAnimation = Instance.new("Animation")
 ParryAnimation.AnimationId = "rbxassetid://127096285501517"
@@ -36,6 +40,7 @@ local ATTACK_ANIMS = {
 	["rbxassetid://118907603246885"] = true
 }
 
+-- GUI
 local gui = Instance.new("ScreenGui", game.CoreGui)
 gui.ResetOnSpawn = false
 
@@ -61,10 +66,8 @@ textLabel.TextXAlignment = Enum.TextXAlignment.Left
 textLabel.Text = "MitHub AutoParry: OFF"
 textLabel.Parent = button
 
-local dragging
-local dragInput
-local dragStart
-local startPos
+-- Drag
+local dragging, dragInput, dragStart, startPos
 
 button.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -89,16 +92,14 @@ UserInputService.InputChanged:Connect(function(input)
 	if input == dragInput and dragging then
 		local delta = input.Position - dragStart
 		button.Position = UDim2.new(
-			startPos.X.Scale,
-			startPos.X.Offset + delta.X,
-			startPos.Y.Scale,
-			startPos.Y.Offset + delta.Y
+			startPos.X.Scale, startPos.X.Offset + delta.X,
+			startPos.Y.Scale, startPos.Y.Offset + delta.Y
 		)
 	end
 end)
 
 local function startCooldown()
-	task.delay(PARRY_COOLDOWN,function()
+	task.delay(PARRY_COOLDOWN, function()
 		canParry = true
 	end)
 end
@@ -108,13 +109,14 @@ local function playParryAnimation()
 	if not char then return end
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if not hum then return end
-	local track = hum:LoadAnimation(ParryAnimation)
-	track:Play()
+	hum:LoadAnimation(ParryAnimation):Play()
 end
 
-local function tryParry(enemyChar)
-	if not enabled then return end
-	if not canParry then return end
+local function tryParry(enemyChar, track)
+	if not enabled or not canParry then return end
+
+	-- debounce por track
+	if track and firedTracks[track] then return end
 
 	local myChar = LocalPlayer.Character
 	if not myChar then return end
@@ -123,8 +125,15 @@ local function tryParry(enemyChar)
 	local enemyRoot = enemyChar:FindFirstChild("HumanoidRootPart")
 	if not myRoot or not enemyRoot then return end
 
-	local distance = (enemyRoot.Position - myRoot.Position).Magnitude
-	if distance > MAX_DISTANCE then return end
+	if (enemyRoot.Position - myRoot.Position).Magnitude > MAX_DISTANCE then return end
+
+	-- marca o track pra não repetir
+	if track then
+		firedTracks[track] = true
+		track.Stopped:Once(function()
+			firedTracks[track] = nil
+		end)
+	end
 
 	canParry = false
 	ParryRemote:FireServer()
@@ -132,36 +141,28 @@ local function tryParry(enemyChar)
 	startCooldown()
 end
 
+local function resetKiller()
+	if killerConnection then killerConnection:Disconnect() end
+	killerAnimator = nil
+	killerChar = nil
+	killerPlayer = nil
+	killerConnection = nil
+	firedTracks = {}
+end
+
 local function getKiller()
-	for _,p in pairs(Players:GetPlayers()) do
+	for _, p in pairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer and p.Team == Teams:FindFirstChild("Killer") then
 			return p
 		end
 	end
 end
 
-local function resetKiller()
-
-	if killerConnection then
-		killerConnection:Disconnect()
-	end
-
-	killerAnimator = nil
-	killerChar = nil
-	killerPlayer = nil
-	killerConnection = nil
-
-end
-
 local function hookKiller()
-
 	local killer = getKiller()
-	if not killer then return end
-
-	if killerPlayer == killer then return end
+	if not killer or killerPlayer == killer then return end
 
 	resetKiller()
-
 	killerPlayer = killer
 
 	if not killer.Character then
@@ -176,40 +177,41 @@ local function hookKiller()
 	killerAnimator = hum:FindFirstChildOfClass("Animator")
 	if not killerAnimator then return end
 
+	-- AnimationPlayed como backup imediato
 	killerConnection = killerAnimator.AnimationPlayed:Connect(function(track)
 		if track.Animation and ATTACK_ANIMS[track.Animation.AnimationId] then
-			tryParry(killerChar)
+			tryParry(killerChar, track)
 		end
 	end)
-
 end
 
-RunService.Heartbeat:Connect(function()
-
-	if not enabled then return end
-	if not canParry then return end
+-- PreSimulation roda ANTES do Heartbeat — detecta mais cedo no frame
+RunService.PreSimulation:Connect(function()
+	if not enabled or not canParry then return end
 
 	hookKiller()
 
-	if not killerAnimator then return end
+	if not killerAnimator or not killerChar then return end
 
 	local tracks = killerAnimator:GetPlayingAnimationTracks()
-
-	for i=1,#tracks do
+	for i = 1, #tracks do
 		local track = tracks[i]
 		if track.Animation and ATTACK_ANIMS[track.Animation.AnimationId] then
-			tryParry(killerChar)
+			-- só parry se a animação ainda está no começo
+			if track.TimePosition <= ANIM_DETECT_WINDOW then
+				tryParry(killerChar, track)
+			end
 			break
 		end
 	end
-
 end)
 
 Players.PlayerAdded:Connect(function(p)
 	p.CharacterAdded:Connect(resetKiller)
+	p:GetPropertyChangedSignal("Team"):Connect(resetKiller)
 end)
 
-for _,p in pairs(Players:GetPlayers()) do
+for _, p in pairs(Players:GetPlayers()) do
 	p.CharacterAdded:Connect(resetKiller)
 	p:GetPropertyChangedSignal("Team"):Connect(resetKiller)
 end
@@ -217,17 +219,18 @@ end
 local function toggle()
 	enabled = not enabled
 	if enabled then
-		textLabel.Text = "On"
+		textLabel.Text = "MitHub AutoParry: ON"
 		textLabel.TextColor3 = Color3.fromRGB(0,255,0)
 	else
-		textLabel.Text = "Off"
+		textLabel.Text = "MitHub AutoParry: OFF"
 		textLabel.TextColor3 = Color3.fromRGB(255,0,0)
+		resetKiller()
 	end
 end
 
 button.MouseButton1Click:Connect(toggle)
 
-UserInputService.InputBegan:Connect(function(input,gp)
+UserInputService.InputBegan:Connect(function(input, gp)
 	if not gp and input.KeyCode == Enum.KeyCode.G then
 		toggle()
 	end
