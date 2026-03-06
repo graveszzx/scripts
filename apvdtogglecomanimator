@@ -1,0 +1,234 @@
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Teams = game:GetService("Teams")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local ParryRemote = RS.Remotes.Items:FindFirstChild("Parrying Dagger").parry
+
+local MAX_DISTANCE = 14
+local PARRY_COOLDOWN = 30
+
+local canParry = true
+local enabled = false
+
+local killerAnimator
+local killerChar
+local killerPlayer
+local killerConnection
+
+local ParryAnimation = Instance.new("Animation")
+ParryAnimation.AnimationId = "rbxassetid://127096285501517"
+
+local ATTACK_ANIMS = {
+	["rbxassetid://113255068724446"] = true,
+	["rbxassetid://74968262036854"] = true,
+	["rbxassetid://110355011987939"] = true,
+	["rbxassetid://139369275981139"] = true,
+	["rbxassetid://132817836308238"] = true,
+	["rbxassetid://129784271201071"] = true,
+	["rbxassetid://133963973694098"] = true,
+	["rbxassetid://117042998468241"] = true,
+	["rbxassetid://105374834496520"] = true,
+	["rbxassetid://111920872708571"] = true,
+	["rbxassetid://78432063483146"] = true,
+	["rbxassetid://118907603246885"] = true
+}
+
+local gui = Instance.new("ScreenGui", game.CoreGui)
+gui.ResetOnSpawn = false
+
+local button = Instance.new("ImageButton")
+button.Size = UDim2.new(0,60,0,62)
+button.Position = UDim2.new(1,-200,1,-220)
+button.BackgroundTransparency = 0.2
+button.BackgroundColor3 = Color3.fromRGB(0,0,0)
+button.Image = "rbxassetid://123067897710095"
+button.ImageColor3 = Color3.fromRGB(255,255,255)
+button.BorderSizePixel = 2
+button.BorderColor3 = Color3.fromRGB(0,255,0)
+button.Parent = gui
+
+local textLabel = Instance.new("TextLabel")
+textLabel.Size = UDim2.new(0,180,0,48)
+textLabel.Position = UDim2.new(0,65,0,7)
+textLabel.BackgroundTransparency = 1
+textLabel.TextColor3 = Color3.fromRGB(255,0,0)
+textLabel.Font = Enum.Font.SourceSansBold
+textLabel.TextSize = 20
+textLabel.TextXAlignment = Enum.TextXAlignment.Left
+textLabel.Text = "MitHub AutoParry: OFF"
+textLabel.Parent = button
+
+local dragging
+local dragInput
+local dragStart
+local startPos
+
+button.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = button.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+button.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		dragInput = input
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		local delta = input.Position - dragStart
+		button.Position = UDim2.new(
+			startPos.X.Scale,
+			startPos.X.Offset + delta.X,
+			startPos.Y.Scale,
+			startPos.Y.Offset + delta.Y
+		)
+	end
+end)
+
+local function startCooldown()
+	task.delay(PARRY_COOLDOWN,function()
+		canParry = true
+	end)
+end
+
+local function playParryAnimation()
+	local char = LocalPlayer.Character
+	if not char then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+	local track = hum:LoadAnimation(ParryAnimation)
+	track:Play()
+end
+
+local function tryParry(enemyChar)
+	if not enabled then return end
+	if not canParry then return end
+
+	local myChar = LocalPlayer.Character
+	if not myChar then return end
+
+	local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+	local enemyRoot = enemyChar:FindFirstChild("HumanoidRootPart")
+	if not myRoot or not enemyRoot then return end
+
+	local distance = (enemyRoot.Position - myRoot.Position).Magnitude
+	if distance > MAX_DISTANCE then return end
+
+	canParry = false
+	ParryRemote:FireServer()
+	playParryAnimation()
+	startCooldown()
+end
+
+local function getKiller()
+	for _,p in pairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Team == Teams:FindFirstChild("Killer") then
+			return p
+		end
+	end
+end
+
+local function resetKiller()
+
+	if killerConnection then
+		killerConnection:Disconnect()
+	end
+
+	killerAnimator = nil
+	killerChar = nil
+	killerPlayer = nil
+	killerConnection = nil
+
+end
+
+local function hookKiller()
+
+	local killer = getKiller()
+	if not killer then return end
+
+	if killerPlayer == killer then return end
+
+	resetKiller()
+
+	killerPlayer = killer
+
+	if not killer.Character then
+		killer.CharacterAdded:Wait()
+	end
+
+	killerChar = killer.Character
+
+	local hum = killerChar:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+
+	killerAnimator = hum:FindFirstChildOfClass("Animator")
+	if not killerAnimator then return end
+
+	killerConnection = killerAnimator.AnimationPlayed:Connect(function(track)
+		if track.Animation and ATTACK_ANIMS[track.Animation.AnimationId] then
+			tryParry(killerChar)
+		end
+	end)
+
+end
+
+RunService.Heartbeat:Connect(function()
+
+	if not enabled then return end
+	if not canParry then return end
+
+	hookKiller()
+
+	if not killerAnimator then return end
+
+	local tracks = killerAnimator:GetPlayingAnimationTracks()
+
+	for i=1,#tracks do
+		local track = tracks[i]
+		if track.Animation and ATTACK_ANIMS[track.Animation.AnimationId] then
+			tryParry(killerChar)
+			break
+		end
+	end
+
+end)
+
+Players.PlayerAdded:Connect(function(p)
+	p.CharacterAdded:Connect(resetKiller)
+end)
+
+for _,p in pairs(Players:GetPlayers()) do
+	p.CharacterAdded:Connect(resetKiller)
+	p:GetPropertyChangedSignal("Team"):Connect(resetKiller)
+end
+
+local function toggle()
+	enabled = not enabled
+	if enabled then
+		textLabel.Text = "On"
+		textLabel.TextColor3 = Color3.fromRGB(0,255,0)
+	else
+		textLabel.Text = "Off"
+		textLabel.TextColor3 = Color3.fromRGB(255,0,0)
+	end
+end
+
+button.MouseButton1Click:Connect(toggle)
+
+UserInputService.InputBegan:Connect(function(input,gp)
+	if not gp and input.KeyCode == Enum.KeyCode.G then
+		toggle()
+	end
+end)
