@@ -1,0 +1,377 @@
+if not game then return end
+
+local KEY_URL = "https://raw.githubusercontent.com/graveszzx/scripts/refs/heads/main/keyproscript"
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
+local function loadMain()
+    local enabled = false
+    local FOV_RADIUS = 120
+    local FIRE_RATE = 0.07
+    local lastFire = 0
+
+    local fovCircle = Drawing.new("Circle")
+    fovCircle.Filled = false
+    fovCircle.NumSides = 1000
+    fovCircle.Thickness = 1
+    fovCircle.Color = Color3.fromRGB(255, 255, 255)
+    fovCircle.Visible = true
+
+    local fovLabel = Drawing.new("Text")
+    fovLabel.Size = 11
+    fovLabel.Font = 2
+    fovLabel.Outline = true
+    fovLabel.Center = true
+    fovLabel.Visible = false
+
+    local tracer = Drawing.new("Line")
+    tracer.Thickness = 1
+    tracer.Color = Color3.fromRGB(0, 255, 128)
+    tracer.Visible = false
+
+    local function getCamera()
+        return workspace.CurrentCamera
+    end
+
+    local function isVisible(target)
+        local camera = getCamera()
+        local origin = camera.CFrame.Position
+        local ignore = {camera}
+        local char = LocalPlayer.Character
+        if char then
+            ignore[#ignore + 1] = char
+        end
+        local hit = workspace:FindPartOnRayWithIgnoreList(
+            Ray.new(origin, target.Position - origin),
+            ignore, false, true
+        )
+        return hit and hit:IsDescendantOf(target.Parent)
+    end
+
+    local function getTarget()
+        local camera = getCamera()
+        local closestPart = nil
+        local closestDist = FOV_RADIUS
+        local centerX = camera.ViewportSize.X / 2
+        local centerY = camera.ViewportSize.Y / 2
+
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                local char = player.Character
+                if char then
+                    local head = char:FindFirstChild("Head")
+                    local hum = char:FindFirstChildOfClass("Humanoid")
+                    if head and hum and hum.Health > 0 then
+                        local screenPos, onScreen = camera:WorldToViewportPoint(head.Position)
+                        if onScreen then
+                            local dx = screenPos.X - centerX
+                            local dy = screenPos.Y - centerY
+                            local dist = math.sqrt(dx * dx + dy * dy)
+                            if dist < closestDist then
+                                closestDist = dist
+                                closestPart = head
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        return closestPart
+    end
+
+    local function getAimPosition(head)
+        local char = head.Parent
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return head.Position, head.Position end
+
+        local myChar = LocalPlayer.Character
+        local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if not myHRP then return head.Position, head.Position end
+
+        local velocity = hrp.AssemblyLinearVelocity
+        local speedXZ = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
+        local velY = velocity.Y
+        local dist = (head.Position - myHRP.Position).Magnitude
+
+        local predH = 0
+        if speedXZ >= 18 then
+            predH = 0.02
+        elseif speedXZ >= 13 then
+            predH = 0.01
+        end
+
+        local predV = 0
+        if velY > 1 then
+            predV = 0.02
+        elseif velY < -1 then
+            predV = 0.01
+        end
+
+        local predicted = head.Position
+            + Vector3.new(velocity.X, 0, velocity.Z) * predH
+            + Vector3.new(0, velY, 0) * predV
+
+        local direction = (predicted - myHRP.Position).Unit
+        local finalPos = myHRP.Position + direction * dist
+
+        return finalPos, predicted
+    end
+
+    local function getFireRemote()
+        local char = LocalPlayer.Character
+        if not char then return nil end
+        local gun = char:FindFirstChild("AS-VAL")
+        if gun then
+            local fire = gun:FindFirstChild("Fire")
+            if fire and fire:IsA("RemoteEvent") then return fire end
+        end
+        for _, v in ipairs(char:GetChildren()) do
+            local fire = v:FindFirstChild("Fire")
+            if fire and fire:IsA("RemoteEvent") then return fire end
+        end
+        return nil
+    end
+
+    RunService.Heartbeat:Connect(function()
+        local camera = getCamera()
+        if not camera then
+            fovCircle.Visible = false
+            fovLabel.Visible = false
+            tracer.Visible = false
+            return
+        end
+
+        fovCircle.Visible = true
+        fovCircle.Position = camera.ViewportSize / 2
+        fovCircle.Radius = FOV_RADIUS
+
+        if not enabled then
+            fovLabel.Visible = false
+            tracer.Visible = false
+            return
+        end
+
+        local target = getTarget()
+
+        if target then
+            local aimPos, tracerPos = getAimPosition(target)
+            local screenPos, onScreen = camera:WorldToViewportPoint(target.Position)
+            local vis = isVisible(target)
+
+            local visColor
+            local visText
+            if vis then
+                visColor = Color3.fromRGB(0, 255, 128)
+                visText = "visible"
+            else
+                visColor = Color3.fromRGB(255, 60, 60)
+                visText = "hidden"
+            end
+
+            if onScreen then
+                tracer.Visible = true
+                tracer.From = camera.ViewportSize / 2
+                local tracerScreen, tracerOnScreen = camera:WorldToViewportPoint(tracerPos)
+                if tracerOnScreen then
+                    tracer.To = Vector2.new(tracerScreen.X, tracerScreen.Y)
+                else
+                    tracer.To = Vector2.new(screenPos.X, screenPos.Y)
+                end
+                tracer.Color = visColor
+            else
+                tracer.Visible = false
+            end
+
+            local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local studs = 0
+            if localRoot then
+                studs = math.floor((target.Position - localRoot.Position).Magnitude)
+            end
+
+            local targetName = "?"
+            if target.Parent then
+                targetName = target.Parent.Name
+            end
+
+            fovLabel.Visible = true
+            fovLabel.Text = targetName .. " - " .. visText .. "\n" .. tostring(studs) .. " studs"
+            fovLabel.Color = visColor
+            fovLabel.Position = Vector2.new(
+                camera.ViewportSize.X / 2,
+                camera.ViewportSize.Y / 2 + FOV_RADIUS + 8
+            )
+
+            if vis then
+                local now = tick()
+                if now - lastFire >= FIRE_RATE then
+                    lastFire = now
+                    local remote = getFireRemote()
+                    if remote then
+                        pcall(function()
+                            remote:FireServer(true, aimPos, false, 14)
+                        end)
+                    end
+                end
+            end
+        else
+            fovLabel.Visible = false
+            tracer.Visible = false
+        end
+    end)
+
+    local gui = Instance.new("ScreenGui")
+    gui.Parent = game.CoreGui
+    gui.ResetOnSpawn = false
+
+    local button = Instance.new("ImageButton")
+    button.Size = UDim2.new(0, 60, 0, 62)
+    button.Position = UDim2.new(1, -200, 1, -220)
+    button.BackgroundTransparency = 0.2
+    button.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    button.Image = "rbxassetid://123067897710095"
+    button.ImageColor3 = Color3.fromRGB(255, 255, 255)
+    button.BorderSizePixel = 2
+    button.BorderColor3 = Color3.fromRGB(255, 0, 0)
+    button.Parent = gui
+
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(0, 180, 0, 48)
+    textLabel.Position = UDim2.new(0, 65, 0, 7)
+    textLabel.BackgroundTransparency = 1
+    textLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+    textLabel.Font = Enum.Font.SourceSansBold
+    textLabel.TextSize = 20
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.Text = "AutoShoot: OFF"
+    textLabel.Parent = button
+
+    local dragging, dragInput, dragStart, startPos
+
+    button.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = button.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    button.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            button.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    local function toggle()
+        enabled = not enabled
+        if enabled then
+            textLabel.Text = "AutoShoot: ON"
+            textLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+            button.BorderColor3 = Color3.fromRGB(0, 255, 0)
+        else
+            textLabel.Text = "AutoShoot: OFF"
+            textLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+            button.BorderColor3 = Color3.fromRGB(255, 0, 0)
+            tracer.Visible = false
+            fovLabel.Visible = false
+        end
+    end
+
+    button.MouseButton1Click:Connect(toggle)
+
+    UserInputService.InputBegan:Connect(function(input, gp)
+        if gp then return end
+        if input.KeyCode == Enum.KeyCode.T then
+            toggle()
+        end
+    end)
+end
+
+local validKey = game:HttpGet(KEY_URL):match("^%s*(.-)%s*$")
+
+local keyGui = Instance.new("ScreenGui")
+keyGui.Parent = game.CoreGui
+keyGui.ResetOnSpawn = false
+keyGui.Name = "MitHubKeyGui"
+
+local bg = Instance.new("Frame", keyGui)
+bg.Size = UDim2.new(0, 320, 0, 160)
+bg.Position = UDim2.new(0.5, -160, 0.5, -80)
+bg.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+bg.BorderSizePixel = 2
+bg.BorderColor3 = Color3.fromRGB(0, 255, 0)
+
+local title = Instance.new("TextLabel", bg)
+title.Size = UDim2.new(1, 0, 0, 36)
+title.BackgroundTransparency = 1
+title.Text = "MitHub Key System"
+title.TextColor3 = Color3.fromRGB(0, 255, 0)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 18
+
+local box = Instance.new("TextBox", bg)
+box.Size = UDim2.new(0, 260, 0, 36)
+box.Position = UDim2.new(0.5, -130, 0, 50)
+box.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+box.BorderSizePixel = 1
+box.BorderColor3 = Color3.fromRGB(0, 255, 0)
+box.TextColor3 = Color3.fromRGB(255, 255, 255)
+box.Font = Enum.Font.SourceSans
+box.TextSize = 16
+box.PlaceholderText = "Digite sua key..."
+box.Text = ""
+box.ClearTextOnFocus = false
+
+local statusLabel = Instance.new("TextLabel", bg)
+statusLabel.Size = UDim2.new(1, 0, 0, 20)
+statusLabel.Position = UDim2.new(0, 0, 0, 92)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = ""
+statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+statusLabel.Font = Enum.Font.SourceSans
+statusLabel.TextSize = 14
+
+local confirmBtn = Instance.new("TextButton", bg)
+confirmBtn.Size = UDim2.new(0, 120, 0, 32)
+confirmBtn.Position = UDim2.new(0.5, -60, 0, 118)
+confirmBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+confirmBtn.BorderSizePixel = 0
+confirmBtn.Text = "Confirmar"
+confirmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+confirmBtn.Font = Enum.Font.SourceSansBold
+confirmBtn.TextSize = 16
+
+confirmBtn.MouseButton1Click:Connect(function()
+    local input = box.Text:match("^%s*(.-)%s*$")
+    if input == validKey then
+        keyGui:Destroy()
+        loadMain()
+    else
+        statusLabel.Text = "Key invalida. Tente novamente."
+        box.Text = ""
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if not gp and input.KeyCode == Enum.KeyCode.Return then
+        confirmBtn.MouseButton1Click:Fire()
+    end
+end)
