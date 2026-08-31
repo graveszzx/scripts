@@ -127,7 +127,7 @@ function LonelyUI:CreateWindow(config)
     local BgImage = config.BgImage  or "rbxassetid://100798770814254"
     local Theme   = LonelyUI.Theme
     local mobile  = isMobile()
-    local W       = mobile and 360 or 600
+    local W       = mobile and 500 or 600
     local H       = mobile and 480 or 620
 
     local ScreenGui = Instance.new("ScreenGui")
