@@ -1,0 +1,736 @@
+local Players          = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
+local RunService       = game:GetService("RunService")
+local HttpService      = game:GetService("HttpService")
+
+local LocalPlayer = Players.LocalPlayer
+
+local PROFILES_FILE = "LonelyUI_Profiles.json"
+
+local function diskRead()
+    local ok, data = pcall(readfile, PROFILES_FILE)
+    if ok and data and data ~= "" then
+        local ok2, t = pcall(HttpService.JSONDecode, HttpService, data)
+        if ok2 then return t end
+    end
+    return { profiles = {}, active = nil }
+end
+
+local function diskWrite(t)
+    local ok, str = pcall(HttpService.JSONEncode, HttpService, t)
+    if ok then pcall(writefile, PROFILES_FILE, str) end
+end
+
+local function listProfiles()
+    return diskRead().profiles
+end
+
+local function saveProfile(name, data)
+    local store = diskRead()
+    store.profiles[name] = data
+    store.active = name
+    diskWrite(store)
+end
+
+local function loadProfile(name)
+    local store = diskRead()
+    return store.profiles[name]
+end
+
+local function deleteProfile(name)
+    local store = diskRead()
+    store.profiles[name] = nil
+    if store.active == name then store.active = nil end
+    diskWrite(store)
+end
+
+local LonelyUI = {}
+LonelyUI.__index = LonelyUI
+
+LonelyUI.Theme = {
+    Accent        = Color3.fromRGB(255, 40,  40),
+    AccentDim     = Color3.fromRGB(200, 25,  25),
+    AccentText    = Color3.fromRGB(16,  16,  18),
+    Background    = Color3.fromRGB(10,  10,  10),
+    SurfaceAlt    = Color3.fromRGB(24,  24,  27),
+    Border        = Color3.fromRGB(255, 40,  40),
+    BorderDim     = Color3.fromRGB(80,  80,  80),
+    TextPrimary   = Color3.fromRGB(255, 255, 255),
+    TextSecondary = Color3.fromRGB(150, 150, 150),
+    TextMuted     = Color3.fromRGB(135, 135, 145),
+    ToggleOff     = Color3.fromRGB(255, 255, 255),
+    ToggleOn      = Color3.fromRGB(255, 40,  40),
+    RainColor     = Color3.fromRGB(150, 150, 150),
+}
+
+local function tw(inst, t, props)
+    TweenService:Create(inst, TweenInfo.new(t, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
+
+local function isMobile()
+    return UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+end
+
+local _registry = {}
+local function registerElement(id, getfn, setfn, etype)
+    _registry[id] = { get = getfn, set = setfn, type = etype }
+end
+
+local function collectConfig()
+    local t = {}
+    for id, el in pairs(_registry) do
+        local ok, v = pcall(el.get)
+        if ok then
+            t[id] = { type = el.type, value = v }
+        end
+    end
+    return t
+end
+
+local function applyConfig(t, execute)
+    if not t then return end
+    for id, data in pairs(t) do
+        local el = _registry[id]
+        if el and el.set then
+            pcall(function()
+                if data.type == "segment" then
+                    el.set(nil, data.value)
+                elseif data.type == "toggle" or data.type == "selectable" then
+                    el.set(nil, data.value)
+                    if execute then el.get() end
+                else
+                    el.set(nil, data.value)
+                end
+            end)
+        end
+    end
+end
+
+local _dropdownOverlay = nil
+
+function LonelyUI:CreateWindow(config)
+    config = config or {}
+    local Title   = config.Title    or "LonelyUI"
+    local Sub     = config.SubTitle or ""
+    local BgImage = config.BgImage  or "rbxassetid://100798770814254"
+    local Theme   = LonelyUI.Theme
+    local mobile  = isMobile()
+    local W       = mobile and 340 or 530
+    local H       = mobile and 480 or 620
+
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name           = "LonelyUI_" .. Title
+    ScreenGui.IgnoreGuiInset = true
+    ScreenGui.ResetOnSpawn   = false
+    ScreenGui.DisplayOrder   = 99
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ScreenGui.Parent         = LocalPlayer:WaitForChild("PlayerGui")
+
+    LocalPlayer.CharacterAdded:Connect(function()
+        task.wait(0.1)
+        if ScreenGui and ScreenGui.Parent ~= LocalPlayer.PlayerGui then
+            ScreenGui.Parent = LocalPlayer.PlayerGui
+        end
+    end)
+
+    _dropdownOverlay = Instance.new("Frame")
+    _dropdownOverlay.Name               = "DropdownOverlay"
+    _dropdownOverlay.ZIndex             = 200
+    _dropdownOverlay.Size               = UDim2.new(1, 0, 1, 0)
+    _dropdownOverlay.BackgroundTransparency = 1
+    _dropdownOverlay.BorderSizePixel    = 0
+    _dropdownOverlay.Parent             = ScreenGui
+
+    local Frame = Instance.new("Frame")
+    Frame.Name             = "MainFrame"
+    Frame.AnchorPoint      = Vector2.new(0.5, 0.5)
+    Frame.Position         = UDim2.new(0.5, 0, 0.5, 0)
+    Frame.Size             = UDim2.new(0, W, 0, H)
+    Frame.BackgroundColor3 = Theme.Background
+    Frame.BorderSizePixel  = 0
+    Frame.ClipsDescendants = false
+    Frame.Parent           = ScreenGui
+    do
+        local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0,18); c.Parent = Frame
+        local g = Instance.new("UIGradient")
+        g.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0,   Color3.fromRGB(20,20,22)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(13,13,15)),
+            ColorSequenceKeypoint.new(1,   Color3.fromRGB(9,9,11)),
+        }); g.Rotation = 90; g.Parent = Frame
+        local s = Instance.new("UIStroke"); s.Color = Theme.Accent; s.Transparency = 0.737; s.Parent = Frame
+        if mobile then
+            local sc = Instance.new("UIScale"); sc.Scale = 0.85; sc.Parent = Frame
+        end
+    end
+
+    do
+        local bg = Instance.new("ImageLabel")
+        bg.ZIndex = 0; bg.Size = UDim2.new(1,0,1,0)
+        bg.BackgroundTransparency = 1; bg.Image = BgImage
+        bg.ImageTransparency = 0.22; bg.ScaleType = Enum.ScaleType.Crop; bg.Parent = Frame
+        local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0,18); c.Parent = bg
+    end
+
+    local function makeAccent(ax,ay,px,py,w,h)
+        local f = Instance.new("Frame"); f.ZIndex = 8
+        if ax then f.AnchorPoint = Vector2.new(ax,ay) end
+        f.Position = UDim2.new(px,0,py,0); f.Size = UDim2.new(0,w,0,h)
+        f.BackgroundColor3 = Theme.Accent; f.BackgroundTransparency = 0.017
+        f.BorderSizePixel = 0; f.Parent = Frame
+        local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(1,0); c.Parent = f
+    end
+    makeAccent(nil,nil,10/W,8/H,30,2); makeAccent(nil,nil,10/W,8/H,2,30)
+    makeAccent(1,0,1-10/W,8/H,30,2);   makeAccent(1,0,1-10/W,8/H,2,30)
+    makeAccent(0,1,10/W,1-8/H,30,2);   makeAccent(0,1,10/W,1-8/H,2,30)
+    makeAccent(1,1,1-10/W,1-8/H,30,2); makeAccent(1,1,1-10/W,1-8/H,2,30)
+
+    local TitleBar = Instance.new("Frame")
+    TitleBar.Name = "TitleBar"; TitleBar.Size = UDim2.new(1,0,0,46)
+    TitleBar.BackgroundColor3 = Theme.SurfaceAlt; TitleBar.BackgroundTransparency = 0.45
+    TitleBar.BorderSizePixel = 0; TitleBar.Parent = Frame
+    do
+        local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0,14); c.Parent = TitleBar
+        local titleText = Title .. (Sub ~= "" and ("  ·  " .. Sub) or "")
+        local lbl = Instance.new("TextLabel")
+        lbl.Position = UDim2.new(0,16,0,1); lbl.Size = UDim2.new(1,-50,1,0)
+        lbl.BackgroundTransparency = 1; lbl.Text = titleText
+        lbl.TextColor3 = Theme.Accent; lbl.TextSize = 19
+        lbl.Font = Enum.Font.GothamBold; lbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.Parent = TitleBar
+        do
+            local g = Instance.new("UIGradient")
+            g.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0,   Color3.fromRGB(255,255,255)),
+                ColorSequenceKeypoint.new(0.5, Color3.fromRGB(185,185,185)),
+                ColorSequenceKeypoint.new(1,   Color3.fromRGB(255,255,255)),
+            }); g.Rotation = -7.978; g.Parent = lbl
+            local st = Instance.new("UIStroke"); st.Color = Theme.Accent; st.Transparency = 0.693; st.Parent = lbl
+        end
+        local minBtn = Instance.new("TextButton")
+        minBtn.Name = "_MinBtn"; minBtn.Position = UDim2.new(1,-36,0.5,-14)
+        minBtn.Size = UDim2.new(0,28,0,28); minBtn.BackgroundColor3 = Color3.fromRGB(20,15,28)
+        minBtn.BorderSizePixel = 0; minBtn.Text = "—"; minBtn.TextColor3 = Theme.Accent
+        minBtn.TextSize = 12; minBtn.Font = Enum.Font.GothamBold; minBtn.Parent = TitleBar
+        local mc = Instance.new("UICorner"); mc.CornerRadius = UDim.new(1,0); mc.Parent = minBtn
+        local ms = Instance.new("UIStroke"); ms.Color = Theme.Accent; ms.Transparency = 0.5; ms.Parent = minBtn
+    end
+
+    do
+        local line = Instance.new("Frame"); line.ZIndex = 3
+        line.Position = UDim2.new(0,12,0,46); line.Size = UDim2.new(1,-24,0,1)
+        line.BackgroundColor3 = Theme.Accent; line.BackgroundTransparency = 0.6
+        line.BorderSizePixel = 0; line.Parent = Frame
+        local acc = Instance.new("Frame"); acc.ZIndex = 4
+        acc.Position = UDim2.new(0,12,0,45); acc.Size = UDim2.new(0,44,0,2)
+        acc.BackgroundColor3 = Theme.Accent; acc.BorderSizePixel = 0; acc.Parent = Frame
+        local ac = Instance.new("UICorner"); ac.CornerRadius = UDim.new(1,0); ac.Parent = acc
+    end
+
+    local ResizeHandle = Instance.new("TextButton")
+    ResizeHandle.Name = "ResizeHandle"; ResizeHandle.ZIndex = 50
+    ResizeHandle.AnchorPoint = Vector2.new(1,1)
+    ResizeHandle.Position = UDim2.new(1,0,1,0)
+    ResizeHandle.Size = UDim2.new(0,20,0,20)
+    ResizeHandle.BackgroundTransparency = 1; ResizeHandle.Text = "◢"
+    ResizeHandle.TextColor3 = Theme.Accent; ResizeHandle.TextSize = 12
+    ResizeHandle.Font = Enum.Font.GothamBold; ResizeHandle.Parent = Frame
+
+    do
+        local minW = mobile and 280 or 400
+        local minH = mobile and 320 or 400
+        local maxW = mobile and 480 or 800
+        local maxH = mobile and 600 or 850
+        local resizing, resizeStart, startSize = false, nil, nil
+        ResizeHandle.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1
+            or i.UserInputType == Enum.UserInputType.Touch then
+                resizing = true
+                resizeStart = Vector2.new(i.Position.X, i.Position.Y)
+                startSize = Vector2.new(Frame.AbsoluteSize.X, Frame.AbsoluteSize.Y)
+            end
+        end)
+        UserInputService.InputChanged:Connect(function(i)
+            if not resizing then return end
+            if i.UserInputType ~= Enum.UserInputType.MouseMovement
+            and i.UserInputType ~= Enum.UserInputType.Touch then return end
+            local delta = Vector2.new(i.Position.X, i.Position.Y) - resizeStart
+            local nw = math.clamp(startSize.X + delta.X, minW, maxW)
+            local nh = math.clamp(startSize.Y + delta.Y, minH, maxH)
+            Frame.Size = UDim2.new(0, nw, 0, nh)
+        end)
+        UserInputService.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1
+            or i.UserInputType == Enum.UserInputType.Touch then
+                resizing = false
+            end
+        end)
+    end
+
+    local SIDEBAR_W = mobile and 100 or 132
+    local Sidebar = Instance.new("Frame")
+    Sidebar.Name = "Sidebar"; Sidebar.ZIndex = 4
+    Sidebar.Position = UDim2.new(0,10,0,50); Sidebar.Size = UDim2.new(0,SIDEBAR_W,1,-58)
+    Sidebar.BackgroundTransparency = 1; Sidebar.BorderSizePixel = 0; Sidebar.Parent = Frame
+    do
+        local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0,18); c.Parent = Sidebar
+        local rail = Instance.new("Frame"); rail.ZIndex = 3
+        rail.Position = UDim2.new(1,2,0,5); rail.Size = UDim2.new(0,2,1,-10)
+        rail.BackgroundColor3 = Theme.Accent; rail.BorderSizePixel = 0; rail.Parent = Sidebar
+        local rc = Instance.new("UICorner"); rc.CornerRadius = UDim.new(1,0); rc.Parent = rail
+        local rg = Instance.new("UIGradient"); rg.Rotation = 90
+        rg.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0,  1,0),
+            NumberSequenceKeypoint.new(0.5,0.15,0),
+            NumberSequenceKeypoint.new(1,  1,0),
+        }); rg.Parent = rail
+    end
+
+    local NavList = Instance.new("Frame")
+    NavList.ZIndex = 5; NavList.Position = UDim2.new(0,8,0,8)
+    NavList.Size = UDim2.new(1,-16,1,-16); NavList.BackgroundTransparency = 1
+    NavList.BorderSizePixel = 0; NavList.Parent = Sidebar
+    do
+        local ul = Instance.new("UIListLayout")
+        ul.Padding = UDim.new(0, mobile and 48 or 64)
+        ul.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        ul.SortOrder = Enum.SortOrder.LayoutOrder; ul.Parent = NavList
+    end
+
+    local CONTENT_X = SIDEBAR_W + 22
+    local ScrollingFrame = Instance.new("ScrollingFrame")
+    ScrollingFrame.Name = "ContentScroll"
+    ScrollingFrame.Position = UDim2.new(0,CONTENT_X,0,52)
+    ScrollingFrame.Size = UDim2.new(1,-(CONTENT_X+10),1,-62)
+    ScrollingFrame.BackgroundTransparency = 1; ScrollingFrame.BorderSizePixel = 0
+    ScrollingFrame.ScrollBarThickness = 3
+    ScrollingFrame.ScrollBarImageColor3 = Color3.fromRGB(170,45,45)
+    ScrollingFrame.ScrollBarImageTransparency = 0.35
+    ScrollingFrame.CanvasSize = UDim2.new(0,0,0,0); ScrollingFrame.Parent = Frame
+    do
+        local ul = Instance.new("UIListLayout"); ul.SortOrder = Enum.SortOrder.LayoutOrder; ul.Parent = ScrollingFrame
+    end
+
+    local RainFX = Instance.new("Frame")
+    RainFX.ClipsDescendants = true; RainFX.Position = UDim2.new(0,8,0,80)
+    RainFX.Size = UDim2.new(1,-16,1,-88); RainFX.BackgroundTransparency = 1
+    RainFX.BorderSizePixel = 0; RainFX.Parent = Frame
+    for _,d in ipairs({
+        {0.459,-.103,9},{0.852,.179,8},{0.292,.665,10},{0.644,.977,12},
+        {0.779,.951,9},{0.088,.463,10},{0.284,-.003,7},{0.697,.717,9},
+        {0.049,-.425,11},{0.978,1.035,8},{0.626,.053,8},{0.141,.415,9},
+        {0.066,.775,7},{0.437,-.327,10},{0.755,-.213,7},{0.549,1.050,12},
+        {0.854,.922,10},{0.564,.137,10},{0.919,.178,8},{0.723,.430,10},
+        {0.642,.835,8},{0.835,.715,7},{0.762,.433,9},{0.559,.158,8},
+        {0.166,.988,11},{0.266,-.046,11},{0.442,-.332,9},{0.501,.618,7},
+        {0.331,.717,10},{0.014,.356,10},{0.468,.818,10},{0.816,.471,7},
+    }) do
+        local f = Instance.new("Frame")
+        f.Position = UDim2.new(d[1],0,d[2],0); f.Size = UDim2.new(0,1,0,d[3])
+        f.BackgroundColor3 = Theme.RainColor; f.BackgroundTransparency = 0.6
+        f.BorderSizePixel = 0; f.Parent = RainFX
+        local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(1,0); c.Parent = f
+        local g = Instance.new("UIGradient"); g.Rotation = 90
+        g.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0,  1,0),
+            NumberSequenceKeypoint.new(0.5,0.4,0),
+            NumberSequenceKeypoint.new(1,  1,0),
+        }); g.Parent = f
+    end
+
+    local MinBubble
+    if mobile then
+        MinBubble = Instance.new("TextButton")
+        MinBubble.Visible = false; MinBubble.ZIndex = 100
+        MinBubble.AnchorPoint = Vector2.new(0.5, 1)
+        MinBubble.Position = UDim2.new(0.5, 0, 1, -40)
+        MinBubble.Size = UDim2.new(0, 140, 0, 44)
+        MinBubble.BackgroundColor3 = Color3.fromRGB(18, 10, 10)
+        MinBubble.BorderSizePixel = 0
+        MinBubble.Text = "☰  " .. Title
+        MinBubble.TextColor3 = Theme.Accent
+        MinBubble.TextSize = 13; MinBubble.Font = Enum.Font.GothamBold
+        MinBubble.Parent = ScreenGui
+        local mc = Instance.new("UICorner"); mc.CornerRadius = UDim.new(0,22); mc.Parent = MinBubble
+        local ms = Instance.new("UIStroke"); ms.Color = Theme.Accent; ms.Transparency = 0.3; ms.Thickness = 1.5; ms.Parent = MinBubble
+        do
+            local dragging, dragStart, startPos = false, nil, nil
+            MinBubble.InputBegan:Connect(function(i)
+                if i.UserInputType == Enum.UserInputType.Touch then
+                    dragging = true; dragStart = i.Position
+                    startPos = MinBubble.Position
+                end
+            end)
+            UserInputService.InputChanged:Connect(function(i)
+                if dragging and i.UserInputType == Enum.UserInputType.Touch then
+                    local d = i.Position - dragStart
+                    MinBubble.Position = UDim2.new(
+                        startPos.X.Scale, startPos.X.Offset + d.X,
+                        startPos.Y.Scale, startPos.Y.Offset + d.Y)
+                end
+            end)
+            UserInputService.InputEnded:Connect(function(i)
+                if i.UserInputType == Enum.UserInputType.Touch then dragging = false end
+            end)
+        end
+    else
+        MinBubble = Instance.new("TextButton")
+        MinBubble.Visible = false; MinBubble.ZIndex = 20
+        MinBubble.Position = UDim2.new(0,26,0,26); MinBubble.Size = UDim2.new(0,108,0,28)
+        MinBubble.BackgroundColor3 = Color3.fromRGB(16,16,16); MinBubble.BorderSizePixel = 0
+        MinBubble.Text = Title; MinBubble.TextColor3 = Theme.Accent
+        MinBubble.TextSize = 11; MinBubble.Font = Enum.Font.GothamBold; MinBubble.Parent = ScreenGui
+        local c = Instance.new("UICorner"); c.Parent = MinBubble
+        local s = Instance.new("UIStroke"); s.Color = Theme.BorderDim; s.Thickness = 1.2; s.Parent = MinBubble
+    end
+
+    local minimised = false
+    local function setMinimised(v)
+        minimised = v
+        Frame.Visible = not v
+        MinBubble.Visible = v
+    end
+    TitleBar:FindFirstChildWhichIsA("TextButton").MouseButton1Click:Connect(function()
+        setMinimised(not minimised)
+    end)
+    MinBubble.MouseButton1Click:Connect(function() setMinimised(false) end)
+
+    do
+        local dragging, dragStart, startPos = false, nil, nil
+        TitleBar.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1
+            or i.UserInputType == Enum.UserInputType.Touch then
+                dragging = true; dragStart = i.Position; startPos = Frame.Position
+            end
+        end)
+        UserInputService.InputChanged:Connect(function(i)
+            if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
+                or i.UserInputType == Enum.UserInputType.Touch) then
+                local d = i.Position - dragStart
+                Frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset+d.X,
+                                           startPos.Y.Scale, startPos.Y.Offset+d.Y)
+            end
+        end)
+        UserInputService.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1
+            or i.UserInputType == Enum.UserInputType.Touch then
+                dragging = false
+            end
+        end)
+    end
+
+    local Window       = {}
+    Window._navTabs    = {}
+    Window._activeIdx  = nil
+
+    local function switchTab(idx)
+        for i, t in ipairs(Window._navTabs) do
+            local a = (i == idx)
+            t.page.Visible = a
+            tw(t.fill, 0.18, {Size = UDim2.new(a and 1 or 0, 0, 1, 0)})
+            tw(t.bar,  0.18, {BackgroundTransparency = a and 0 or 1})
+            tw(t.lbl,  0.18, {TextColor3 = a and Theme.TextPrimary or Theme.TextSecondary})
+        end
+        Window._activeIdx = idx
+    end
+
+    function Window:AddTab(label)
+        local idx    = #self._navTabs + 1
+        local active = (idx == 1)
+
+        local bg = Instance.new("Frame")
+        bg.ZIndex = 5; bg.LayoutOrder = idx; bg.ClipsDescendants = true
+        bg.Size = UDim2.new(1,0,0,40); bg.BackgroundColor3 = Color3.fromRGB(14,14,16)
+        bg.BackgroundTransparency = active and 0.1 or 0.25
+        bg.BorderSizePixel = 0; bg.Parent = NavList
+        local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0,12); bc.Parent = bg
+        local bs = Instance.new("UIStroke"); bs.Color = Theme.Border
+        bs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        bs.Transparency = active and 0.1 or 0.5; bs.Parent = bg
+
+        local fill = Instance.new("Frame"); fill.ZIndex = 6
+        fill.Size = UDim2.new(active and 1 or 0,0,1,0)
+        fill.BackgroundColor3 = Theme.Accent; fill.BorderSizePixel = 0; fill.Parent = bg
+        local fc = Instance.new("UICorner"); fc.CornerRadius = UDim.new(0,12); fc.Parent = fill
+        local fg = Instance.new("UIGradient"); fg.Transparency = NumberSequence.new(0.25,0.72); fg.Parent = fill
+
+        local bar = Instance.new("Frame"); bar.ZIndex = 8
+        bar.Position = UDim2.new(0,0,0.225,0); bar.Size = UDim2.new(0,3,0.55,0)
+        bar.BackgroundColor3 = Theme.Accent
+        bar.BackgroundTransparency = active and 0 or 1
+        bar.BorderSizePixel = 0; bar.Parent = bg
+        local barc = Instance.new("UICorner"); barc.CornerRadius = UDim.new(1,0); barc.Parent = bar
+
+        local lbl = Instance.new("TextLabel"); lbl.ZIndex = 7
+        lbl.Size = UDim2.new(1,0,1,0); lbl.BackgroundTransparency = 1; lbl.Text = label
+        lbl.TextColor3 = active and Theme.TextPrimary or Theme.TextSecondary
+        lbl.TextSize = mobile and 10 or 12; lbl.Font = Enum.Font.GothamBold; lbl.Parent = bg
+
+        local btn = Instance.new("TextButton"); btn.ZIndex = 8
+        btn.Size = UDim2.new(1,0,1,0); btn.BackgroundTransparency = 1
+        btn.Text = ""; btn.AutoButtonColor = false; btn.Parent = bg
+
+        local page = Instance.new("Frame"); page.Name = "Page_"..label
+        page.Visible = active; page.Size = UDim2.new(1,0,0,0)
+        page.BackgroundTransparency = 1; page.BorderSizePixel = 0; page.Parent = ScrollingFrame
+
+        local ul = Instance.new("UIListLayout")
+        ul.Padding = UDim.new(0,8); ul.SortOrder = Enum.SortOrder.LayoutOrder; ul.Parent = page
+        local pad = Instance.new("UIPadding")
+        pad.PaddingTop = UDim.new(0,7); pad.PaddingBottom = UDim.new(0,10)
+        pad.PaddingLeft = UDim.new(0,7); pad.PaddingRight = UDim.new(0,7); pad.Parent = page
+
+        ul:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            page.Size = UDim2.new(1,0,0, ul.AbsoluteContentSize.Y + 17)
+            local total = 0
+            for _,child in ipairs(ScrollingFrame:GetChildren()) do
+                if child:IsA("Frame") then total += child.AbsoluteSize.Y end
+            end
+            ScrollingFrame.CanvasSize = UDim2.new(0,0,0,total+20)
+        end)
+
+        table.insert(self._navTabs, {page=page, fill=fill, bar=bar, lbl=lbl})
+        if active then self._activeIdx = 1 end
+
+        btn.MouseButton1Click:Connect(function() switchTab(idx) end)
+
+        local Tab       = {}
+        Tab._page       = page
+        Tab._order      = 0
+
+        local function tNextOrder()
+            Tab._order += 1
+            return Tab._order
+        end
+
+        function Tab:AddSection(text)
+            local f = Instance.new("Frame")
+            f.LayoutOrder = tNextOrder(); f.Size = UDim2.new(1,0,0,17)
+            f.BackgroundTransparency = 1; f.BorderSizePixel = 0; f.Parent = self._page
+
+            local dot = Instance.new("Frame")
+            dot.Position = UDim2.new(0,8,0.5,-1); dot.Size = UDim2.new(0,10,0,2)
+            dot.BackgroundColor3 = Color3.fromRGB(160,160,160); dot.BorderSizePixel = 0; dot.Parent = f
+            local dc = Instance.new("UICorner"); dc.CornerRadius = UDim.new(1,0); dc.Parent = dot
+
+            local lbl2 = Instance.new("TextLabel")
+            lbl2.Position = UDim2.new(0,24,0,0); lbl2.Size = UDim2.new(1,-30,1,0)
+            lbl2.BackgroundTransparency = 1; lbl2.Text = text
+            lbl2.TextColor3 = Theme.TextMuted; lbl2.TextSize = 10
+            lbl2.Font = Enum.Font.GothamBold; lbl2.TextXAlignment = Enum.TextXAlignment.Left
+            lbl2.Parent = f
+
+            local Section      = {}
+            Section._page      = self._page
+
+            local function makeRow(sz)
+                sz = sz or 40
+                local r = Instance.new("Frame")
+                r.ZIndex = 6; r.LayoutOrder = tNextOrder()
+                r.Size = UDim2.new(1,-2,0,sz)
+                r.BackgroundColor3 = Color3.fromRGB(255,255,255)
+                r.BackgroundTransparency = 0.82; r.BorderSizePixel = 0; r.Parent = self._page
+                local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0,10); c.Parent = r
+                local s = Instance.new("UIStroke"); s.Color = Theme.Border; s.Transparency = 0.6; s.Parent = r
+                return r
+            end
+
+            local function rowLbl(parent, text2)
+                local l = Instance.new("TextLabel")
+                l.ZIndex = 8; l.Position = UDim2.new(0,11,0,0)
+                l.Size = UDim2.new(0.58,0,1,0); l.BackgroundTransparency = 1; l.Text = text2
+                l.TextColor3 = Theme.TextPrimary; l.TextSize = 11
+                l.Font = Enum.Font.GothamBold; l.TextXAlignment = Enum.TextXAlignment.Left
+                l.Parent = parent
+            end
+
+            local function makeBadge(parent, offX)
+                local kb = Instance.new("TextButton")
+                kb.ZIndex = 6; kb.Position = UDim2.new(1, offX or -106, 0.5, -11)
+                kb.Size = UDim2.new(0,44,0,22); kb.BackgroundColor3 = Color3.fromRGB(16,16,20)
+                kb.BorderSizePixel = 0; kb.Text = "bind"
+                kb.TextColor3 = Color3.fromRGB(90,90,100); kb.TextSize = 9
+                kb.Font = Enum.Font.GothamBold; kb.AutoButtonColor = false; kb.Parent = parent
+                local kbc = Instance.new("UICorner"); kbc.CornerRadius = UDim.new(0,5); kbc.Parent = kb
+                local kbs = Instance.new("UIStroke"); kbs.Color = Color3.fromRGB(60,60,70); kbs.Thickness = 1; kbs.Parent = kb
+                return kb, kbs
+            end
+
+            local function wireKeybind(kb, kbs, onFire)
+                local boundKey = nil
+                local binding  = false
+
+                local function refresh()
+                    if binding then
+                        kb.Text = "..."; kb.TextColor3 = Theme.Accent; kbs.Color = Theme.Accent
+                    elseif boundKey then
+                        kb.Text = boundKey; kb.TextColor3 = Theme.Accent; kbs.Color = Theme.Accent
+                    else
+                        kb.Text = "bind"; kb.TextColor3 = Color3.fromRGB(90,90,100); kbs.Color = Color3.fromRGB(60,60,70)
+                    end
+                end
+
+                kb.MouseButton1Click:Connect(function()
+                    if binding then binding = false; refresh(); return end
+                    binding = true; refresh()
+                end)
+
+                UserInputService.InputBegan:Connect(function(input, gp)
+                    if gp then return end
+                    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+                    if binding then
+                        if input.KeyCode == Enum.KeyCode.Escape then binding = false; refresh(); return end
+                        boundKey = input.KeyCode.Name; binding = false; refresh()
+                        return
+                    end
+                    if boundKey and input.KeyCode.Name == boundKey then onFire() end
+                end)
+
+                return {
+                    GetKey = function(_) return boundKey end,
+                    SetKey = function(_, k) boundKey = k; refresh() end,
+                }
+            end
+
+            function Section:AddToggle(name, cfg)
+                cfg = cfg or {}
+                local isOn = cfg.Default  or false
+                local cb   = cfg.Callback or function() end
+                local id   = cfg.Id       or name
+
+                local row = makeRow()
+                rowLbl(row, name)
+
+                local kb, kbs = makeBadge(row, -106)
+
+                local pill = Instance.new("Frame"); pill.ZIndex = 3
+                pill.Position = UDim2.new(1,-56,0.5,-12); pill.Size = UDim2.new(0,46,0,24)
+                pill.BackgroundColor3 = isOn and Theme.ToggleOn or Theme.ToggleOff
+                pill.BackgroundTransparency = isOn and 0.1 or 0.75
+                pill.BorderSizePixel = 0; pill.Parent = row
+                local pc = Instance.new("UICorner"); pc.CornerRadius = UDim.new(1,0); pc.Parent = pill
+                local ps = Instance.new("UIStroke"); ps.Color = Theme.Accent; ps.Transparency = 0.65; ps.Parent = pill
+
+                local knob = Instance.new("Frame"); knob.ZIndex = 4
+                knob.Position = isOn and UDim2.new(1,-21,0.5,-9) or UDim2.new(0,3,0.5,-9)
+                knob.Size = UDim2.new(0,18,0,18); knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
+                knob.BackgroundTransparency = isOn and 0 or 0.35
+                knob.BorderSizePixel = 0; knob.Parent = pill
+                local kc = Instance.new("UICorner"); kc.CornerRadius = UDim.new(1,0); kc.Parent = knob
+
+                local pillBtn = Instance.new("TextButton"); pillBtn.ZIndex = 5
+                pillBtn.Size = UDim2.new(1,0,1,0); pillBtn.BackgroundTransparency = 1
+                pillBtn.Text = ""; pillBtn.Parent = pill
+
+                local function setState(v)
+                    isOn = v
+                    tw(pill, 0.15, {BackgroundColor3 = v and Theme.ToggleOn or Theme.ToggleOff, BackgroundTransparency = v and 0.1 or 0.75})
+                    tw(knob, 0.15, {Position = v and UDim2.new(1,-21,0.5,-9) or UDim2.new(0,3,0.5,-9), BackgroundTransparency = v and 0 or 0.35})
+                    cb(v)
+                end
+
+                pillBtn.MouseButton1Click:Connect(function() setState(not isOn) end)
+
+                local kbCtrl = wireKeybind(kb, kbs, function() setState(not isOn) end)
+
+                local ctrl = {
+                    Set    = function(_, v) setState(v) end,
+                    Get    = function(_) return isOn end,
+                    GetKey = kbCtrl.GetKey,
+                    SetKey = kbCtrl.SetKey,
+                }
+                registerElement(id, function() return isOn end, ctrl.Set, "toggle")
+                return ctrl
+            end
+
+            function Section:AddTextbox(name, cfg)
+                cfg = cfg or {}
+                local cb = cfg.Callback or function() end
+                local w  = cfg.Width    or 50
+
+                local row = makeRow()
+                rowLbl(row, name)
+
+                local tb = Instance.new("TextBox"); tb.ZIndex = 5
+                tb.Position = UDim2.new(1,-(w+4),0.5,-11); tb.Size = UDim2.new(0,w,0,22)
+                tb.BackgroundColor3 = Color3.fromRGB(18,18,18); tb.BorderSizePixel = 0
+                tb.Text = tostring(cfg.Default or ""); tb.TextColor3 = Theme.Accent; tb.TextSize = 11
+                tb.Font = Enum.Font.GothamBold; tb.PlaceholderColor3 = Color3.fromRGB(166,26,26)
+                tb.ClearTextOnFocus = false; tb.Parent = row
+                local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(0,5); tc.Parent = tb
+                local ts = Instance.new("UIStroke"); ts.Color = Theme.Accent; ts.Parent = tb
+
+                tb.FocusLost:Connect(function() cb(tb.Text) end)
+
+                return {
+                    Set = function(_, v) tb.Text = tostring(v) end,
+                    Get = function(_) return tb.Text end,
+                }
+            end
+
+            function Section:AddKeybind(name, cfg)
+                cfg = cfg or {}
+                local cb = cfg.Callback or function() end
+
+                local row = makeRow()
+                rowLbl(row, name)
+
+                local kb, kbs = makeBadge(row, -56)
+                local ctrl = wireKeybind(kb, kbs, cb)
+
+                return {
+                    GetKey = ctrl.GetKey,
+                    SetKey = ctrl.SetKey,
+                }
+            end
+
+            function Section:AddSegment(name, options, cfg)
+                cfg = cfg or {}
+                local activeIdx = cfg.Default  or 1
+                local cb        = cfg.Callback or function() end
+                local segW      = cfg.Width    or 92
+                local id        = cfg.Id       or name
+
+                local row = makeRow()
+                rowLbl(row, name)
+
+                local seg = Instance.new("Frame"); seg.ZIndex = 3
+                seg.Position = UDim2.new(1,-(segW+6),0.5,-9); seg.Size = UDim2.new(0,segW,0,18)
+                seg.BackgroundColor3 = Color3.fromRGB(10,10,10); seg.BorderSizePixel = 0; seg.Parent = row
+                local sc = Instance.new("UICorner"); sc.CornerRadius = UDim.new(0,5); sc.Parent = seg
+                local ss = Instance.new("UIStroke"); ss.Color = Theme.Accent; ss.Parent = seg
+
+                local pills = {}
+                for i, opt in ipairs(options) do
+                    local a = (i == activeIdx)
+                    local b = Instance.new("TextButton"); b.ZIndex = 4
+                    b.Position = UDim2.new((i-1)*0.5, i==1 and 2 or 0, 0, 2)
+                    b.Size = UDim2.new(0.5, a and 0 or -2, 1, -4)
+                    b.BackgroundColor3 = a and Theme.Accent or Color3.fromRGB(10,10,10)
+                    b.BorderSizePixel = 0; b.Text = opt
+                    b.TextColor3 = a and Theme.AccentText or Theme.Accent
+                    b.TextSize = 9; b.Font = Enum.Font.GothamBold; b.AutoButtonColor = false; b.Parent = seg
+                    local bc2 = Instance.new("UICorner"); bc2.CornerRadius = UDim.new(0,4); bc2.Parent = b
+                    pills[i] = b
+                end
+
+                local function setActive(idx)
+                    activeIdx = idx
+                    for i, p in ipairs(pills) do
+                        local a = (i == idx)
+                        tw(p, 0.12, {BackgroundColor3 = a and Theme.Accent or Color3.fromRGB(10,10,10),
+                                     TextColor3       = a and Theme.AccentText or Theme.Accent})
+                    end
+                    cb(idx, options[idx])
+                end
+
+                for i, p in ipairs(pills) do
+                    p.MouseButton1Click:Connect(function() setActive(i) end)
+                end
+
+                local ctrl = {
+                    Set = function(_, idx) setActive(idx) end,
+                    Get = function(_) return activeIdx, options[activeIdx] end,
+                }
+                registerElement(id, function() return activeIdx end, ctrl.Set, "segment")
+                retu                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
