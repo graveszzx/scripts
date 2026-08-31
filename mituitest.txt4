@@ -128,7 +128,7 @@ function LonelyUI:CreateWindow(config)
     local Theme   = LonelyUI.Theme
     local mobile  = isMobile()
     local W       = mobile and 470 or 600
-    local H       = mobile and 450 or 620
+    local H       = mobile and 440 or 620
 
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name           = "LonelyUI_" .. Title
