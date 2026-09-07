@@ -887,7 +887,7 @@ function LonelyUI:CreateWindow(config)
 
                 local kb, kbs, icon, wrapper
                 if useKeybind then
-                    kb, kbs, icon, wrapper = makeBadge(row, -116)
+                    kb, kbs, icon, wrapper = makeBadge(row, -105)
                 end
 
                 local pill = Instance.new("Frame"); pill.ZIndex = 3
@@ -944,7 +944,7 @@ function LonelyUI:CreateWindow(config)
                     local cpSwatch = Instance.new("Frame", cpRow2); cpSwatch.ZIndex = 7
                     cpSwatch.AnchorPoint = Vector2.new(1,0.5)
                     cpSwatch.Position = UDim2.new(1,-10,0.5,0)
-                    cpSwatch.Size = UDim2.new(0,52,0,18)
+                    cpSwatch.Size = UDim2.new(0,42,0,18)
                     cpSwatch.BackgroundColor3 = colorDef; cpSwatch.BorderSizePixel = 0
                     Instance.new("UICorner", cpSwatch).CornerRadius = UDim.new(0,5)
 
