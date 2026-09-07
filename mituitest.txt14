@@ -1315,7 +1315,7 @@ function LonelyUI:CreateWindow(config)
                 end)
 
                 if useKeybind then
-                    local kb2, kbs2, icon2, wrapper2 = makeBadge(row, -70)
+                    local kb2, kbs2, icon2, wrapper2 = makeBadge(row, -65)
                     wireKeybind(kb2, kbs2, function() cb() end, icon2, wrapper2)
                 end
             end
@@ -1872,7 +1872,7 @@ function LonelyUI:CreateWindow(config)
     -- textbox + botão salvar
     local profileNameBox = profilesSec:AddTextbox("Nome do perfil", {
         Default  = "minha config",
-        Width    = 100,
+        Width    = 80,
         Callback = function() end,
     })
 
