@@ -1174,7 +1174,7 @@ function LonelyUI:CreateWindow(config)
                 rowLbl(row, name)
 
                 local tb = Instance.new("TextBox"); tb.ZIndex = 5
-                tb.Position = UDim2.new(1,-(w+18),0.5,-11); tb.Size = UDim2.new(0,w,0,22)
+                tb.Position = UDim2.new(1,-(w+20),0.5,-11); tb.Size = UDim2.new(0,w,0,22)
                 tb.BackgroundColor3 = Color3.fromRGB(18,18,18); tb.BorderSizePixel = 0
                 tb.Text = tostring(cfg.Default or ""); tb.TextColor3 = Theme.Accent; tb.TextSize = 11
                 tb.Font = Enum.Font.Gotham; tb.PlaceholderColor3 = Color3.fromRGB(166,26,26)
