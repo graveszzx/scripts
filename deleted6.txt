@@ -1,0 +1,1034 @@
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library      = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager  = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Options = Library.Options
+local Toggles = Library.Toggles
+
+local lp = game:GetService("Players").LocalPlayer
+local rs = game:GetService("RunService")
+local RS = game:GetService("ReplicatedStorage")
+
+local SPAWNS = {
+    { name = "Vegita (Secret)",          pos = Vector3.new(790,  31,  911) },
+    { name = "Bulma",                    pos = Vector3.new(576, -30, 1018) },
+    { name = "Kuririn",                  pos = Vector3.new(509, -30,  965) },
+    { name = "Piccolo",                  pos = Vector3.new(592, -30,  884) },
+    { name = "Gohan",                    pos = Vector3.new(523, -30,  811) },
+    { name = "Aot Potato",               pos = Vector3.new(543, -30,  662) },
+    { name = "Aot BuzzCut",              pos = Vector3.new(622, -30,  614) },
+    { name = "Aot Scientist",            pos = Vector3.new(529, -29,  550) },
+    { name = "Aot Erwin",                pos = Vector3.new(622, -30,  466) },
+    { name = "Aot Mikasa",               pos = Vector3.new(526, -30,  408) },
+    { name = "Aot Levi (Secret)",        pos = Vector3.new(848,  11,  653) },
+    { name = "Naruto Shadow",            pos = Vector3.new(524, -30,  270) },
+    { name = "Naruto Sakura",            pos = Vector3.new(611, -30,  239) },
+    { name = "Naruto Hinata",            pos = Vector3.new(603, -30,  168) },
+    { name = "Naruto Akimichi",          pos = Vector3.new(567, -30,   72) },
+    { name = "Naruto Tsunade",           pos = Vector3.new(579, -30,  -18) },
+    { name = "Naruto Kakashi (Secret)",  pos = Vector3.new(324, -10,   84) },
+    { name = "Nanatsu Goat Sin",         pos = Vector3.new(568, -30, -228) },
+    { name = "Nanatsu Serpent Sin",      pos = Vector3.new(532, -30, -290) },
+    { name = "Nanatsu Grizzly Sin",      pos = Vector3.new(560, -29, -353) },
+    { name = "Nanatsu Fox Sin",          pos = Vector3.new(523, -29, -488) },
+    { name = "Nanatsu Boar Sin",         pos = Vector3.new(570, -30, -565) },
+    { name = "Nanatsu Escanor (Secret)", pos = Vector3.new(338, -42, -404) },
+    { name = "Solo Weak Sung",           pos = Vector3.new(560, -30, -774) },
+    { name = "Solo Stealth Assassin",    pos = Vector3.new(516, -30, -841) },
+    { name = "Solo Veteran Hunter",      pos = Vector3.new(545, -30, -928) },
+    { name = "Solo Surveillance Chief",  pos = Vector3.new(522, -30, -1019) },
+    { name = "Solo Sword Dancer",        pos = Vector3.new(544, -30, -1117) },
+    { name = "Solo National Ranker (Secret)", pos = Vector3.new(711, 24, -924) },
+}
+
+local SPAWN_NAMES = {}
+for _, s in ipairs(SPAWNS) do table.insert(SPAWN_NAMES, s.name) end
+local SPAWN_MAP = {}
+for _, s in ipairs(SPAWNS) do SPAWN_MAP[s.name] = s.pos end
+
+local RAID_MAPS = { "DBZ", "Naruto", "Nanatsu", "SoloLeveling", "AOT" }
+
+local State = {
+    autofarmEnabled       = false,
+    selectedSpawns        = {},
+    currentSpawnIdx       = 1,
+    farmLoop              = nil,
+    inGamemodeTrial       = false,
+
+    autoJoinTrialEnabled  = false,
+    trialMap              = "The Hallway",
+    trialLoop             = nil,
+    gamemodeWatcher       = nil,
+    trialStopStage        = 50,
+
+    autoCreateRaidEnabled = false,
+    raidMap               = "DBZ",
+    raidStopWave          = 40,
+    raidLoop              = nil,
+    raidWatcher           = nil,
+
+    autoJoinRaidEnabled   = false,
+    autoJoinPortalEnabled = false,
+    raidPortalWatcher     = nil,
+
+    autoForcePortalEnabled = false,
+    forcePortalID          = nil,
+    forcePortalLoop        = nil,
+
+    autoCollectOrbEnabled = false,
+    collectingOrbs        = false,
+
+    inviteWatcherConn     = nil,
+}
+
+local function getRemote()
+    local bridge = RS:FindFirstChild("ffrostflame_bridgenet2@1.0.0")
+    return bridge and bridge:FindFirstChild("dataRemoteEvent")
+end
+
+local function getHRP()
+    local c = lp.Character
+    return c and c:FindFirstChild("HumanoidRootPart")
+end
+
+local function teleport(pos)
+    local hrp = getHRP()
+    if hrp then hrp.CFrame = CFrame.new(pos) end
+end
+
+local function fireRemote(args)
+    local remote = getRemote()
+    if not remote then return end
+    pcall(function() remote:FireServer(unpack(args)) end)
+end
+
+local function isGamemodeGuiActive()
+    local pg = lp:FindFirstChild("PlayerGui")
+    if not pg then return false end
+    local gm = pg:FindFirstChild("Gamemode")
+    return gm and gm.Enabled
+end
+
+local function getGamemodeLabel()
+    local pg = lp:FindFirstChild("PlayerGui")
+    if not pg then return nil end
+    local gm = pg:FindFirstChild("Gamemode")
+    if not gm or not gm.Enabled then return nil end
+    local lbl = gm:FindFirstChild("Content")
+        and gm.Content:FindFirstChild("Start")
+        and gm.Content.Start:FindFirstChild("Label")
+    return lbl
+end
+
+local function getCurrentWaveOrStage()
+    local lbl = getGamemodeLabel()
+    if not lbl then return nil, nil end
+    local ctx = (lbl.ContentText ~= "" and lbl.ContentText)
+        or (lbl.Text ~= "" and lbl.Text)
+        or ""
+    local wave = ctx:match("Wave:%s*(%d+)")
+    if wave then return tonumber(wave), "Wave" end
+    local stage = ctx:match("Stage:%s*(%d+)")
+    if stage then return tonumber(stage), "Stage" end
+    return nil, nil
+end
+
+local function isGuiShowingWave()
+    local lbl = getGamemodeLabel()
+    if not lbl then return false end
+    local ctx = (lbl.ContentText ~= "" and lbl.ContentText)
+        or (lbl.Text ~= "" and lbl.Text)
+        or ""
+    return ctx:match("Wave:") ~= nil
+end
+
+local function isGuiShowingStage()
+    local lbl = getGamemodeLabel()
+    if not lbl then return false end
+    local ctx = (lbl.ContentText ~= "" and lbl.ContentText)
+        or (lbl.Text ~= "" and lbl.Text)
+        or ""
+    return ctx:match("Stage:") ~= nil
+end
+
+local function clickConfirmIfInviteOpen()
+    local pg = lp:FindFirstChild("PlayerGui")
+    if not pg then return end
+    local inv = pg:FindFirstChild("Invite")
+    if not inv or not inv.Enabled then return end
+    pcall(function()
+        inv.Content.Prompts.Template.Buttons.Confirm:Activate()
+    end)
+end
+
+local function hasLiveEnemiesInRange()
+    local inRange = workspace:FindFirstChild("_ENEMIES")
+        and workspace._ENEMIES:FindFirstChild("InRange")
+    if not inRange then return false end
+    for _, child in ipairs(inRange:GetChildren()) do
+        if child.Name ~= "Highlight" then return true end
+    end
+    return false
+end
+
+local function getInRangeIDs()
+    local inRange = workspace:FindFirstChild("_ENEMIES")
+        and workspace._ENEMIES:FindFirstChild("InRange")
+    if not inRange then return {} end
+    local ids = {}
+    for _, child in ipairs(inRange:GetChildren()) do
+        if child.Name ~= "Highlight" then
+            table.insert(ids, child.Name)
+        end
+    end
+    return ids
+end
+
+local function getTrialFolder()
+    local gm = workspace:FindFirstChild("_MAP")
+        and workspace._MAP:FindFirstChild("Gamemode")
+    if not gm then return nil end
+    for _, child in ipairs(gm:GetChildren()) do
+        if child.Name:match("^Time Trial_") then return child end
+    end
+    return nil
+end
+
+local function hasGamemodeTrial()
+    return getTrialFolder() ~= nil
+end
+
+local function getTrialSpotPos()
+    local trial = getTrialFolder()
+    if not trial then return nil end
+    local spots = trial:FindFirstChild("Spots")
+    if not spots then return nil end
+    local spot = spots:FindFirstChild("5")
+    if not spot then return nil end
+    if spot:IsA("BasePart") then return spot.Position end
+    if spot:IsA("Model") then
+        local pp = spot.PrimaryPart or spot:FindFirstChildWhichIsA("BasePart")
+        if pp then return pp.Position end
+    end
+    return nil
+end
+
+local function fireAttack(ids)
+    if #ids == 0 then return end
+    fireRemote({
+        [1] = {
+            [1] = {
+                [1] = "ClickSystem",
+                [2] = "Execute",
+                [3] = ids,
+                ["n"] = #ids,
+            },
+            [2] = "\2",
+        },
+    })
+end
+
+local function fireQuitGamemode()
+    fireRemote({
+        [1] = {
+            [1] = {
+                [1] = "GamemodeSystem",
+                [2] = "Quit",
+                ["n"] = 2,
+            },
+            [2] = "\2",
+        },
+    })
+end
+
+local function fireCreateRaid(mapName)
+    fireRemote({
+        [1] = {
+            [1] = {
+                [1] = "GamemodeSystem",
+                [2] = "Create",
+                [3] = "Raid",
+                [4] = mapName,
+                [5] = "Easy",
+                ["n"] = 6,
+            },
+            [2] = "\2",
+        },
+    })
+end
+
+local function fireStartRaid()
+    local userId = lp.UserId
+    fireRemote({
+        [1] = {
+            [1] = {
+                [1] = "GamemodeSystem",
+                [2] = "Start",
+                [3] = "Raid",
+                [4] = userId,
+                ["n"] = 4,
+            },
+            [2] = "\2",
+        },
+    })
+end
+
+local function fireEnterTrial(map)
+    for _, diff in ipairs({ "Easy", "Medium", "Hard" }) do
+        pcall(function()
+            fireRemote({
+                [1] = {
+                    [1] = {
+                        [1] = "GamemodeSystem",
+                        [2] = "Enter",
+                        [3] = "Time Trial",
+                        [4] = map or "The Hallway",
+                        [5] = diff,
+                        ["n"] = 5,
+                    },
+                    [2] = "\2",
+                },
+            })
+        end)
+        task.wait(0.1)
+    end
+end
+
+local function fireJoin(gmType, id)
+    fireRemote({
+        [1] = {
+            [1] = {
+                [1] = "GamemodeSystem",
+                [2] = "Join",
+                [3] = gmType,
+                [4] = id,
+                ["n"] = 4,
+            },
+            [2] = "\2",
+        },
+    })
+end
+
+local FOX_SIN_POS = Vector3.new(523, -21, -488)
+
+local ORB_SPOTS = {
+    Vector3.new(729,  -7, -336),
+    Vector3.new(688,  -8, -623),
+    Vector3.new(358,  -7, -504),
+    Vector3.new(436,  -7, -237),
+    Vector3.new(570, -30, -194),
+    Vector3.new(535, -24, -416),
+}
+
+local function labelOrb(root)
+    if root:FindFirstChild("_collected") then return end
+    local tag = Instance.new("StringValue")
+    tag.Name = "_collected"
+    tag.Parent = root
+end
+
+local function isOrbCollected(root)
+    return root:FindFirstChild("_collected") ~= nil
+end
+
+local function getUncollectedOrbs()
+    local spawnItems = workspace:FindFirstChild("_SPAWNITEMS")
+    if not spawnItems then return {} end
+    local orbs = {}
+    for _, item in ipairs(spawnItems:GetChildren()) do
+        local root = item:FindFirstChild("Root")
+        local pp   = root and root:FindFirstChild("ProximityPrompt")
+        if root and pp and not isOrbCollected(root) then
+            table.insert(orbs, { root = root, prompt = pp })
+        end
+    end
+    return orbs
+end
+
+local function collectAllOrbs()
+    if State.collectingOrbs then return end
+    State.collectingOrbs = true
+    for i = 1, 8 do teleport(FOX_SIN_POS); task.wait(0.3) end
+    task.wait(0.5)
+    for _, spotPos in ipairs(ORB_SPOTS) do
+        if not State.autoCollectOrbEnabled then break end
+        for pass = 1, 5 do
+            if not State.autoCollectOrbEnabled then break end
+            for i = 1, 3 do teleport(spotPos); task.wait(0.15) end
+            local orbs = getUncollectedOrbs()
+            if #orbs == 0 then break end
+            local collectedThisPass = false
+            for _, orb in ipairs(orbs) do
+                if not State.autoCollectOrbEnabled then break end
+                local rootPos = orb.root.Position
+                for i = 1, 3 do teleport(rootPos); task.wait(0.15) end
+                local hrp = getHRP()
+                if hrp and (hrp.Position - rootPos).Magnitude <= 20 then
+                    for _ = 1, 4 do
+                        pcall(function() fireproximityprompt(orb.prompt) end)
+                        task.wait(0.1)
+                    end
+                    labelOrb(orb.root)
+                    collectedThisPass = true
+                    for i = 1, 3 do teleport(spotPos); task.wait(0.15) end
+                end
+                task.wait(0.1)
+            end
+            if not collectedThisPass and pass > 1 then break end
+            task.wait(0.2)
+        end
+    end
+    State.collectingOrbs = false
+end
+
+local function startTrialLoop()
+    if State.trialLoop then return end
+    State.inGamemodeTrial = true
+
+    State.trialLoop = task.spawn(function()
+        while State.autoJoinTrialEnabled do
+            if not hasGamemodeTrial() then break end
+
+            local num, kind = getCurrentWaveOrStage()
+            if kind == "Stage" and num and num >= State.trialStopStage then
+                Library:Notify({ Title = "Auto Trial", Description = "Stage " .. num .. " reached! Quitting.", Time = 3 })
+                fireQuitGamemode()
+                task.wait(1)
+                break
+            end
+
+            local pos = getTrialSpotPos()
+            if pos then teleport(pos) end
+            task.wait(0.5)
+        end
+
+        if State.autoCollectOrbEnabled then
+            collectAllOrbs()
+        end
+        State.inGamemodeTrial = false
+        State.trialLoop = nil
+    end)
+end
+
+local function getMyRaidFolder()
+    local gm = workspace:FindFirstChild("_MAP")
+        and workspace._MAP:FindFirstChild("Gamemode")
+    if not gm then return nil end
+    return gm:FindFirstChild("Raid_" .. lp.UserId)
+end
+
+local function getRaidSpotPos(raidFolder, spotName)
+    if not raidFolder then return nil end
+    local spots = raidFolder:FindFirstChild("Spots")
+    if not spots then return nil end
+    local spot = spots:FindFirstChild(spotName)
+    if not spot then return nil end
+    if spot:IsA("BasePart") then return spot.Position end
+    if spot:IsA("Model") then
+        local pp = spot.PrimaryPart or spot:FindFirstChildWhichIsA("BasePart")
+        if pp then return pp.Position end
+    end
+    return nil
+end
+
+local function getRaidSpawnPartPos(raidFolder)
+    if not raidFolder then return nil end
+    local spawnModel = raidFolder:FindFirstChild("SpawnModel")
+    if not spawnModel then return nil end
+    local sp = spawnModel:FindFirstChild("SpawnPart")
+    if not sp then return nil end
+    if sp:IsA("BasePart") then return sp.Position end
+    return nil
+end
+
+local function startCreateRaidLoop()
+    if State.raidLoop then return end
+
+    State.raidLoop = task.spawn(function()
+        while State.autoCreateRaidEnabled do
+
+            if State.inGamemodeTrial or State.collectingOrbs then
+                task.wait(0.5)
+                continue
+            end
+
+            if isGamemodeGuiActive() and isGuiShowingWave() then
+                local num, kind = getCurrentWaveOrStage()
+                if kind == "Wave" and num and num >= State.raidStopWave then
+                    Library:Notify({ Title = "Auto Raid", Description = "Wave " .. num .. " reached! Recreating raid.", Time = 3 })
+                    fireQuitGamemode()
+                    task.wait(2)
+                    fireCreateRaid(State.raidMap)
+                    task.wait(1)
+                    fireStartRaid()
+                    task.wait(2)
+                else
+                    local raidFolder = getMyRaidFolder()
+                    local spotPos = getRaidSpotPos(raidFolder, "5")
+                        or getRaidSpotPos(raidFolder, "4")
+                        or getRaidSpotPos(raidFolder, "3")
+                        or getRaidSpotPos(raidFolder, "2")
+                        or getRaidSpotPos(raidFolder, "1")
+
+                    if spotPos then
+                        teleport(spotPos)
+                    else
+                        local spawnPos = getRaidSpawnPartPos(raidFolder)
+                        if spawnPos then
+                            for i = 1, 6 do
+                                teleport(spawnPos)
+                                task.wait(0.2)
+                            end
+                        end
+                    end
+                end
+                task.wait(0.5)
+                continue
+            end
+
+            if not isGamemodeGuiActive() then
+                fireCreateRaid(State.raidMap)
+                task.wait(1)
+                fireStartRaid()
+                task.wait(2)
+            end
+
+            task.wait(0.5)
+        end
+
+        State.raidLoop = nil
+    end)
+end
+
+local function startFarmLoop()
+    if State.farmLoop then return end
+
+    State.farmLoop = task.spawn(function()
+        while State.autofarmEnabled do
+            clickConfirmIfInviteOpen()
+
+            if State.autoCreateRaidEnabled and isGamemodeGuiActive() then
+                task.wait(0.5)
+                continue
+            end
+
+            if State.inGamemodeTrial or State.collectingOrbs then
+                task.wait(0.3)
+                continue
+            end
+
+            local selected = State.selectedSpawns
+            if #selected == 0 then task.wait(0.5); continue end
+
+            local spawnName = selected[State.currentSpawnIdx]
+            local spawnPos  = SPAWN_MAP[spawnName]
+
+            if not spawnPos then
+                State.currentSpawnIdx = (State.currentSpawnIdx % #selected) + 1
+                task.wait(0.1)
+                continue
+            end
+
+            local t0 = tick()
+            while tick() - t0 < 2 do
+                if not State.autofarmEnabled then break end
+                teleport(spawnPos)
+                task.wait(0.1)
+            end
+
+            while State.autofarmEnabled do
+                if State.autoCreateRaidEnabled and isGamemodeGuiActive() then break end
+                if hasGamemodeTrial() then break end
+                if State.collectingOrbs then break end
+                clickConfirmIfInviteOpen()
+                teleport(spawnPos)
+                if not hasLiveEnemiesInRange() then break end
+                fireAttack(getInRangeIDs())
+                task.wait(0.1)
+            end
+
+            State.currentSpawnIdx = (State.currentSpawnIdx % #selected) + 1
+        end
+
+        State.farmLoop = nil
+    end)
+end
+
+local function stopFarmLoop()
+    State.autofarmEnabled = false
+    State.farmLoop = nil
+end
+
+local function setupGamemodeWatcher()
+    if State.gamemodeWatcher then
+        State.gamemodeWatcher:Disconnect()
+        State.gamemodeWatcher = nil
+    end
+    if not State.autoJoinTrialEnabled then return end
+
+    local ok, gm = pcall(function()
+        return workspace:WaitForChild("_MAP", 5):WaitForChild("Gamemode", 5)
+    end)
+    if not ok or not gm then return end
+
+    local function onTrialFound()
+        task.delay(0.5, function()
+            if not State.autoJoinTrialEnabled then return end
+            fireEnterTrial(State.trialMap)
+            startTrialLoop()
+        end)
+    end
+
+    for _, child in ipairs(gm:GetChildren()) do
+        if child.Name:match("^Time Trial_") then onTrialFound(); break end
+    end
+
+    State.gamemodeWatcher = gm.ChildAdded:Connect(function(child)
+        if not State.autoJoinTrialEnabled then return end
+        if child.Name:match("^Time Trial_") then onTrialFound() end
+    end)
+end
+
+local function setupInviteWatcher()
+    if State.inviteWatcherConn then
+        State.inviteWatcherConn:Disconnect()
+        State.inviteWatcherConn = nil
+    end
+    local pg = lp:FindFirstChild("PlayerGui")
+    if not pg then return end
+    local function watchInvite(inv)
+        if not inv then return end
+        inv:GetPropertyChangedSignal("Enabled"):Connect(function()
+            if not inv.Enabled then return end
+            if not State.autoJoinTrialEnabled then return end
+            task.spawn(function()
+                task.wait(5)
+                if not inv.Enabled then return end
+                if not State.autoJoinTrialEnabled then return end
+                if isGamemodeGuiActive() and isGuiShowingWave() then
+                    fireQuitGamemode()
+                    task.wait(1.5)
+                end
+                fireEnterTrial(State.trialMap)
+            end)
+        end)
+    end
+    local inv = pg:FindFirstChild("Invite")
+    if inv then
+        watchInvite(inv)
+    else
+        State.inviteWatcherConn = pg.ChildAdded:Connect(function(child)
+            if child.Name == "Invite" then watchInvite(child) end
+        end)
+    end
+end
+
+local function handleGamemodeChild(child)
+    if State.collectingOrbs then return end
+
+    local raidID = child.Name:match("^Raid_(%d+)$")
+    if raidID and State.autoJoinRaidEnabled then
+        task.delay(0.5, function()
+            if not State.autoJoinRaidEnabled then return end
+            fireJoin("Raid", tonumber(raidID))
+        end)
+        return
+    end
+
+    local portalID = child.Name:match("^Portal_(%d+)$")
+    if portalID and State.autoJoinPortalEnabled then
+        task.delay(0.5, function()
+            if not State.autoJoinPortalEnabled then return end
+            fireJoin("Portal", tonumber(portalID))
+        end)
+    end
+end
+
+local function setupRaidPortalWatcher()
+    if State.raidPortalWatcher then
+        State.raidPortalWatcher:Disconnect()
+        State.raidPortalWatcher = nil
+    end
+    if not State.autoJoinRaidEnabled and not State.autoJoinPortalEnabled then return end
+
+    local mapFolder = workspace:FindFirstChild("_MAP")
+    if not mapFolder then return end
+    local ok, gm = pcall(function() return mapFolder:WaitForChild("Gamemode", 5) end)
+    if not ok or not gm then return end
+
+    for _, child in ipairs(gm:GetChildren()) do handleGamemodeChild(child) end
+
+    State.raidPortalWatcher = gm.ChildAdded:Connect(function(child)
+        handleGamemodeChild(child)
+    end)
+end
+
+local function getAvailablePortalNames()
+    local gm = workspace:FindFirstChild("_MAP") and workspace._MAP:FindFirstChild("Gamemode")
+    if not gm then return {} end
+    local names = {}
+    for _, child in ipairs(gm:GetChildren()) do
+        local id = child.Name:match("^Portal_(%d+)$")
+        if id then table.insert(names, "Portal " .. id) end
+    end
+    return names
+end
+
+local function startForcePortalLoop()
+    if State.forcePortalLoop then return end
+    State.forcePortalLoop = task.spawn(function()
+        while State.autoForcePortalEnabled do
+            if State.forcePortalID then fireJoin("Portal", State.forcePortalID) end
+            task.wait(10)
+        end
+        State.forcePortalLoop = nil
+    end)
+end
+
+task.spawn(setupInviteWatcher)
+
+local Window = Library:CreateWindow({
+    Title             = "MITHUB",
+    Footer            = ":3",
+    NotifySide        = "Right",
+    ShowCustomCursor  = true,
+    MobileButtonsSide = "Right",
+})
+
+local Tabs = {
+    Farm      = Window:AddTab("Farm",        "swords"),
+    Gamemodes = Window:AddTab("Gamemodes",   "zap"),
+    Misc      = Window:AddTab("Misc",        "star"),
+    Settings  = Window:AddTab("UI Settings", "settings"),
+}
+
+local FarmLeft = Tabs.Farm:AddGroupbox({ Side = "Left", Name = "Autofarm" })
+
+FarmLeft:AddToggle("AutofarmToggle", {
+    Text     = "Enable Autofarm",
+    Default  = false,
+    Callback = function(v)
+        State.autofarmEnabled = v
+        State.currentSpawnIdx = 1
+        if v then startFarmLoop() else stopFarmLoop() end
+    end,
+})
+
+FarmLeft:AddDivider()
+
+FarmLeft:AddDropdown("SpawnSelect", {
+    Values   = SPAWN_NAMES,
+    Multi    = true,
+    Text     = "Select Spawns",
+    Callback = function(value)
+        State.selectedSpawns = {}
+        for name, sel in pairs(value) do
+            if sel then table.insert(State.selectedSpawns, name) end
+        end
+        State.currentSpawnIdx = 1
+    end,
+})
+
+FarmLeft:AddDivider()
+
+FarmLeft:AddButton({
+    Text = "Select All",
+    Func = function()
+        local all = {}
+        for _, name in ipairs(SPAWN_NAMES) do all[name] = true end
+        Options.SpawnSelect:SetValue(all)
+    end,
+})
+FarmLeft:AddButton({
+    Text = "Clear Selection",
+    Func = function() Options.SpawnSelect:SetValue({}) end,
+})
+
+local TrialBox = Tabs.Gamemodes:AddGroupbox({ Side = "Left", Name = "Time Trial" })
+
+TrialBox:AddToggle("AutoJoinTrialToggle", {
+    Text     = "Auto Trial",
+    Default  = false,
+    Callback = function(v)
+        State.autoJoinTrialEnabled = v
+        if v then
+            task.spawn(setupGamemodeWatcher)
+        else
+            if State.gamemodeWatcher then
+                State.gamemodeWatcher:Disconnect()
+                State.gamemodeWatcher = nil
+            end
+            State.trialLoop = nil
+        end
+    end,
+})
+
+TrialBox:AddSlider("TrialStopStage", {
+    Text     = "Stop at Stage",
+    Default  = 50,
+    Min      = 1,
+    Max      = 200,
+    Rounding = 0,
+    Callback = function(v) State.trialStopStage = v end,
+})
+
+TrialBox:AddDivider()
+
+TrialBox:AddToggle("AutoCollectOrbToggle", {
+    Text     = "Auto Collect Orbs",
+    Default  = false,
+    Callback = function(v) State.autoCollectOrbEnabled = v end,
+})
+
+TrialBox:AddDivider()
+
+TrialBox:AddDropdown("TrialMap", {
+    Values   = { "The Hallway" },
+    Default  = "The Hallway",
+    Text     = "Map",
+    Callback = function(v) State.trialMap = v end,
+})
+
+local RaidBox = Tabs.Gamemodes:AddGroupbox({ Side = "Right", Name = "Raid" })
+
+RaidBox:AddToggle("AutoCreateRaidToggle", {
+    Text     = "Auto Create Raid",
+    Default  = false,
+    Callback = function(v)
+        State.autoCreateRaidEnabled = v
+        if v then
+            startCreateRaidLoop()
+        else
+            State.raidLoop = nil
+        end
+    end,
+})
+
+RaidBox:AddDropdown("RaidMapSelect", {
+    Values   = RAID_MAPS,
+    Default  = "DBZ",
+    Text     = "Raid Map",
+    Callback = function(v) State.raidMap = v end,
+})
+
+RaidBox:AddSlider("RaidStopWave", {
+    Text     = "Stop at Wave",
+    Default  = 40,
+    Min      = 1,
+    Max      = 200,
+    Rounding = 0,
+    Callback = function(v) State.raidStopWave = v end,
+})
+
+RaidBox:AddDivider()
+
+RaidBox:AddToggle("AutoJoinRaidToggle", {
+    Text     = "Auto Join Raid",
+    Default  = false,
+    Callback = function(v)
+        State.autoJoinRaidEnabled = v
+        task.spawn(setupRaidPortalWatcher)
+    end,
+})
+
+RaidBox:AddDivider()
+
+RaidBox:AddToggle("AutoJoinPortalToggle", {
+    Text     = "Auto Join Portal",
+    Default  = false,
+    Callback = function(v)
+        State.autoJoinPortalEnabled = v
+        task.spawn(setupRaidPortalWatcher)
+    end,
+})
+
+RaidBox:AddDivider()
+
+RaidBox:AddToggle("AutoForcePortalToggle", {
+    Text     = "Auto Force Portal",
+    Default  = false,
+    Callback = function(v)
+        State.autoForcePortalEnabled = v
+        if v then
+            local names = getAvailablePortalNames()
+            if #names > 0 then
+                pcall(function() Options.ForcePortalSelect:SetValues(names) end)
+            end
+            startForcePortalLoop()
+        else
+            State.autoForcePortalEnabled = false
+            State.forcePortalLoop = nil
+        end
+    end,
+})
+
+RaidBox:AddDropdown("ForcePortalSelect", {
+    Values   = {},
+    Text     = "Select Portal",
+    Callback = function(v)
+        if not v or v == "" then State.forcePortalID = nil; return end
+        local id = tostring(v):match("Portal (%d+)")
+        State.forcePortalID = id and tonumber(id) or nil
+    end,
+})
+
+RaidBox:AddButton({
+    Text = "Refresh Portals",
+    Func = function()
+        local names = getAvailablePortalNames()
+        if #names > 0 then
+            pcall(function() Options.ForcePortalSelect:SetValues(names) end)
+        end
+    end,
+})
+
+local MiscState = {
+    attrsEnabled  = false,
+    attrLoop      = nil,
+    atkSPDEnabled = false,
+    atkSPDValue   = 99999,
+    atkSPDLoop    = nil,
+    rangeEnabled  = false,
+    rangeValue    = 7,
+    rangeLoop     = nil,
+}
+
+local BULK_ATTRS = {
+    "CardLuck","CardSpins","CritChance","CritDMG","Damage","Drop",
+    "GachaLuck","GachaSpeed","ReleaseBPXP","Storage","SimulSpin",
+    "GuildGold","GuildEnergy","GuildDamage","GuildCardLuck","GachaSpins","AvatarXP",
+}
+
+local MiscLeft = Tabs.Misc:AddGroupbox({ Side = "Left", Name = "Attributes" })
+
+MiscLeft:AddToggle("BulkAttrsToggle", {
+    Text     = "All Attributes (99999)",
+    Default  = false,
+    Callback = function(v)
+        MiscState.attrsEnabled = v
+        if v then
+            if MiscState.attrLoop then return end
+            MiscState.attrLoop = rs.RenderStepped:Connect(function()
+                if not MiscState.attrsEnabled then
+                    MiscState.attrLoop:Disconnect()
+                    MiscState.attrLoop = nil
+                    return
+                end
+                for _, attr in ipairs(BULK_ATTRS) do
+                    pcall(function() lp:SetAttribute(attr, 99999) end)
+                end
+            end)
+        else
+            if MiscState.attrLoop then
+                MiscState.attrLoop:Disconnect()
+                MiscState.attrLoop = nil
+            end
+        end
+    end,
+})
+
+local MiscRight = Tabs.Misc:AddGroupbox({ Side = "Right", Name = "AtkSPD / AttackRange" })
+
+MiscRight:AddToggle("AtkSPDToggle", {
+    Text     = "AtkSPD",
+    Default  = false,
+    Callback = function(v)
+        MiscState.atkSPDEnabled = v
+        if v then
+            if MiscState.atkSPDLoop then return end
+            MiscState.atkSPDLoop = rs.RenderStepped:Connect(function()
+                if not MiscState.atkSPDEnabled then
+                    MiscState.atkSPDLoop:Disconnect()
+                    MiscState.atkSPDLoop = nil
+                    return
+                end
+                pcall(function() lp:SetAttribute("AtkSPD", MiscState.atkSPDValue) end)
+            end)
+        else
+            if MiscState.atkSPDLoop then
+                MiscState.atkSPDLoop:Disconnect()
+                MiscState.atkSPDLoop = nil
+            end
+        end
+    end,
+})
+
+MiscRight:AddSlider("AtkSPDSlider", {
+    Text     = "AtkSPD Value",
+    Default  = 99999,
+    Min      = 0,
+    Max      = 99999,
+    Rounding = 0,
+    Callback = function(v) MiscState.atkSPDValue = v end,
+})
+
+MiscRight:AddDivider()
+
+MiscRight:AddToggle("AttackRangeToggle", {
+    Text     = "Attack Range",
+    Default  = false,
+    Callback = function(v)
+        MiscState.rangeEnabled = v
+        if v then
+            if MiscState.rangeLoop then return end
+            MiscState.rangeLoop = rs.RenderStepped:Connect(function()
+                if not MiscState.rangeEnabled then
+                    MiscState.rangeLoop:Disconnect()
+                    MiscState.rangeLoop = nil
+                    return
+                end
+                pcall(function() lp:SetAttribute("AttackRange", MiscState.rangeValue) end)
+            end)
+        else
+            if MiscState.rangeLoop then
+                MiscState.rangeLoop:Disconnect()
+                MiscState.rangeLoop = nil
+            end
+        end
+    end,
+})
+
+MiscRight:AddSlider("AttackRangeSlider", {
+    Text     = "Attack Range Value",
+    Default  = 7,
+    Min      = 0,
+    Max      = 7,
+    Rounding = 1,
+    Callback = function(v) MiscState.rangeValue = v end,
+})
+
+local MenuGroup = Tabs.Settings:AddGroupbox({ Side = "Left", Name = "Menu" })
+
+MenuGroup:AddToggle("ShowCustomCursor", {
+    Text     = "Custom Cursor",
+    Default  = true,
+    Callback = function(v) Library.ShowCustomCursor = v end,
+})
+
+MenuGroup:AddDropdown("NotificationSide", {
+    Values   = { "Left", "Right" },
+    Default  = "Right",
+    Text     = "Notification Side",
+    Callback = function(v) Library:SetNotifySide(v) end,
+})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu Keybind"):AddKeyPicker("MenuKeybind", {
+    Default = "RightShift",
+    NoUI    = true,
+    Text    = "Open/Close Menu",
+})
+MenuGroup:AddButton("Unload", function() Library:Unload() end)
+
+Library.ToggleKeybind = Options.MenuKeybind
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
+ThemeManager:SetFolder("Autofarm")
+SaveManager:SetFolder("Autofarm/config")
+SaveManager:BuildConfigSection(Tabs.Settings)
+ThemeManager:ApplyToTab(Tabs.Settings)
+SaveManager:LoadAutoloadConfig()
